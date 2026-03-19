@@ -1,0 +1,19 @@
+<svg width="160" height="40" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon -->
+  <circle cx="20" cy="20" r="18" fill="#12121A"/>
+  <circle cx="20" cy="20" r="18" stroke="url(#wm-ring)" stroke-width="1.5"/>
+  <rect x="12" y="13" width="10" height="13" rx="1.5" stroke="#8A8D93" stroke-width="1.5" fill="none"/>
+  <rect x="15.5" y="16.5" width="4" height="1.2" rx="0.3" fill="#8A8D93" fill-opacity="0.7"/>
+  <rect x="15.5" y="19" width="4" height="1.2" rx="0.3" fill="#8A8D93" fill-opacity="0.5"/>
+  <rect x="15.5" y="21.5" width="4" height="1.2" rx="0.3" fill="#8A8D93" fill-opacity="0.35"/>
+  <path d="M26 16C27.5 17.2 27.5 19.8 26 21" stroke="#8A8D93" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.7"/>
+  <path d="M29 14C31.5 17 31.5 23 29 26" stroke="#8A8D93" stroke-width="1.2" stroke-linecap="round" stroke-opacity="0.4"/>
+  <!-- Text -->
+  <text x="48" y="26" font-family="'Space Grotesk', system-ui, sans-serif" font-size="20" font-weight="700" fill="#EEEEF5" letter-spacing="-0.02em">Bench</text>
+  <defs>
+    <linearGradient id="wm-ring" x1="20" y1="2" x2="20" y2="38" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8A8D93"/>
+      <stop offset="1" stop-color="#5A5C63" stop-opacity="0.3"/>
+    </linearGradient>
+  </defs>
+</svg>
