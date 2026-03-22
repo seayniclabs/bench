@@ -43,6 +43,10 @@ func startServer() async throws {
             return try handleIdentifyDevice(params: params)
         case "eject_device":
             return try handleEjectDevice(params: params)
+        case "list_serial_ports":
+            return handleListSerialPorts(params: params)
+        case "hub_topology":
+            return handleHubTopology(params: params)
         default:
             return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
         }
@@ -200,6 +204,69 @@ func handleEjectDevice(params: CallTool.Parameters) throws -> CallTool.Result {
     }
 }
 
+func handleListSerialPorts(params: CallTool.Parameters) -> CallTool.Result {
+    let filterType = params.arguments?["device_type"]?.stringValue ?? "all"
+
+    // Map filter string to device category
+    let filter: SerialPortBridge.SerialPort.DeviceCategory?
+    switch filterType.lowercased() {
+    case "usb": filter = .usb
+    case "bluetooth": filter = .bluetooth
+    case "built_in", "builtin": filter = .builtIn
+    case "all": filter = nil
+    default:
+        return .init(
+            content: [.text("Invalid device_type '\(filterType)'. Use: usb, bluetooth, built_in, or all")],
+            isError: true
+        )
+    }
+
+    let ports = SerialPortBridge.allPorts(filterDeviceType: filter)
+
+    if ports.isEmpty {
+        let msg = filterType == "all"
+            ? "No serial ports found."
+            : "No serial ports of type '\(filterType)' found."
+        return .init(content: [.text(msg)])
+    }
+
+    // Get USB devices for matching
+    let usbDevices = IOKitBridge.enumerateDevices(includeInternal: true)
+
+    let portLines = ports.map { port -> String in
+        formatSerialPort(port, usbDevices: usbDevices)
+    }
+
+    let output = """
+    Found \(ports.count) serial port\(ports.count == 1 ? "" : "s"):
+
+    \(portLines.joined(separator: "\n\n"))
+    """
+    return .init(content: [.text(output)])
+}
+
+func handleHubTopology(params: CallTool.Parameters) -> CallTool.Result {
+    let includeInternal = params.arguments?["include_internal"]?.boolValue ?? false
+
+    let topology = IOKitBridge.enumerateHubTopology(includeInternal: includeInternal)
+
+    if topology.isEmpty {
+        return .init(content: [.text("No USB devices found in topology.")])
+    }
+
+    var lines: [String] = []
+    for node in topology {
+        formatTopologyNode(node, prefix: "", isLast: true, isRoot: true, lines: &lines)
+    }
+
+    let output = """
+    USB Hub Topology:
+
+    \(lines.joined(separator: "\n"))
+    """
+    return .init(content: [.text(output)])
+}
+
 // MARK: - Formatting
 
 func formatDeviceSummary(_ device: USBDevice) -> String {
@@ -297,6 +364,85 @@ func enrichStorageDevices(_ devices: inout [USBDevice], with volumes: [VolumeInf
     let storageTypes: Set<String> = ["storage", "unknown"]
     for i in devices.indices where storageTypes.contains(devices[i].deviceType) {
         enrichSingleDevice(&devices[i], with: volumes)
+    }
+}
+
+func formatSerialPort(_ port: SerialPortBridge.SerialPort, usbDevices: [USBDevice]) -> String {
+    var lines = [
+        "  \(port.path)",
+        "    Type: \(port.deviceType.rawValue)",
+    ]
+
+    switch port.type {
+    case .usbSerial:
+        lines.append("    Port Type: USB-Serial Adapter")
+    case .usbModem:
+        lines.append("    Port Type: USB Modem (CDC ACM)")
+    case .other:
+        if port.deviceType == .bluetooth {
+            lines.append("    Port Type: Bluetooth")
+        } else {
+            lines.append("    Port Type: Built-in")
+        }
+    }
+
+    // Try to match to a USB device
+    if let device = SerialPortBridge.matchDevice(port: port, devices: usbDevices) {
+        lines.append("    Device: \(device.name)")
+        lines.append("    Vendor: \(device.vendorName) (\(String(format: "0x%04X", device.vendorID)))")
+        lines.append("    Product ID: \(String(format: "0x%04X", device.productID))")
+        lines.append("    Speed: \(device.usbSpeed)")
+        lines.append("    Location: \(device.locationID)")
+
+        if let known = DeviceDatabase.identify(vendorID: device.vendorID, productID: device.productID) {
+            lines.append("    Identified as: \(known.name)")
+        }
+    }
+
+    return lines.joined(separator: "\n")
+}
+
+func formatTopologyNode(_ node: IOKitBridge.TopologyNode, prefix: String, isLast: Bool, isRoot: Bool, lines: inout [String]) {
+    let connector = isLast ? "└── " : "├── "
+    let childPrefix = isLast ? "    " : "│   "
+
+    // Build the node label
+    var label: String
+    let portLabel = node.portNumber > 0 ? "Port \(node.portNumber)" : "Bus"
+
+    if node.isHub {
+        label = "\(portLabel): USB Hub [\(node.name)]"
+    } else {
+        label = "\(portLabel): \(node.name)"
+        if node.vendorName != "Unknown" {
+            label += " [\(node.vendorName)]"
+        }
+    }
+
+    // Add speed
+    label += " (\(node.speed))"
+
+    // Add power draw
+    if node.busPowerMA > 0 {
+        label += " \(node.busPowerMA)mA"
+    }
+
+    // Add serial port if present
+    if let serialPort = node.serialPort {
+        label += " → \(serialPort)"
+    }
+
+    if isRoot {
+        lines.append(label)
+    } else {
+        lines.append("\(prefix)\(connector)\(label)")
+    }
+
+    // Render children
+    let nextPrefix = isRoot ? "" : "\(prefix)\(childPrefix)"
+    for (index, child) in node.children.enumerated() {
+        let isLastChild = index == node.children.count - 1
+        formatTopologyNode(child, prefix: nextPrefix, isLast: isLastChild, isRoot: false, lines: &lines)
     }
 }
 

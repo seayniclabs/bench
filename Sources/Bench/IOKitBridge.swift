@@ -145,6 +145,226 @@ enum IOKitBridge {
         return nil
     }
 
+    // MARK: - Hub Topology
+
+    /// Represents a node in the USB hub topology tree
+    struct TopologyNode: Sendable {
+        let name: String
+        let vendorID: Int
+        let productID: Int
+        let vendorName: String
+        let speed: String
+        let busPowerMA: Int
+        let locationID: Int
+        let portNumber: Int
+        let isHub: Bool
+        let deviceClass: Int
+        let serialPort: String?     // Populated if this device has a serial port
+        var children: [TopologyNode]
+    }
+
+    /// Enumerate the USB hub topology as a tree structure
+    static func enumerateHubTopology(includeInternal: Bool = false) -> [TopologyNode] {
+        // Step 1: Enumerate all USB devices AND hubs, collecting parent info
+        let matching = IOServiceMatching(kIOUSBDeviceClassName)
+        var iterator: io_iterator_t = 0
+        let result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator)
+
+        guard result == KERN_SUCCESS else { return [] }
+        defer { IOObjectRelease(iterator) }
+
+        // Collect all nodes with their raw location IDs for parent matching
+        struct RawNode {
+            let node: TopologyNode
+            let rawLocationID: Int
+        }
+
+        var allNodes: [RawNode] = []
+        var service = IOIteratorNext(iterator)
+
+        while service != 0 {
+            defer {
+                IOObjectRelease(service)
+                service = IOIteratorNext(iterator)
+            }
+
+            let vendorID = getIntProperty(service, kUSBVendorID) ?? 0
+            let productID = getIntProperty(service, kUSBProductID) ?? 0
+            let deviceClass = getIntProperty(service, kUSBDeviceClass) ?? 0
+            let locationID = getIntProperty(service, kUSBDevicePropertyLocationID) ?? 0
+            let speed = getIntProperty(service, "Device Speed") ?? 0
+            let busPower = getIntProperty(service, "Bus Power Available") ?? 0
+            let portNumber = getIntProperty(service, "PortNum") ?? 0
+
+            // Skip root hubs (vendor 0, product 0 and location 0)
+            if vendorID == 0 && productID == 0 { continue }
+
+            // Skip internal Apple devices unless requested
+            if !includeInternal && vendorID == 0x05AC { continue }
+
+            let name = getStringProperty(service, kUSBProductString)
+                ?? getStringProperty(service, "USB Product Name")
+                ?? "Unknown Device"
+            let vendorName = getStringProperty(service, kUSBVendorString)
+                ?? DeviceDatabase.vendorName(for: vendorID)
+                ?? "Unknown"
+
+            let isHub = deviceClass == 0x09
+
+            let node = TopologyNode(
+                name: name,
+                vendorID: vendorID,
+                productID: productID,
+                vendorName: vendorName,
+                speed: speedString(speed),
+                busPowerMA: busPower * 2,
+                locationID: locationID,
+                portNumber: portNumber,
+                isHub: isHub,
+                deviceClass: deviceClass,
+                serialPort: nil,
+                children: []
+            )
+
+            allNodes.append(RawNode(node: node, rawLocationID: locationID))
+        }
+
+        // Step 2: Enrich with serial port info
+        let serialPorts = SerialPortBridge.discoverPorts()
+        for i in allNodes.indices {
+            let locHex = String(format: "0x%08X", allNodes[i].rawLocationID)
+            for port in serialPorts {
+                guard let hint = port.locationHint else { continue }
+                var hex = locHex.lowercased()
+                if hex.hasPrefix("0x") { hex = String(hex.dropFirst(2)) }
+                if hex.contains(hint.lowercased()) {
+                    allNodes[i] = RawNode(
+                        node: TopologyNode(
+                            name: allNodes[i].node.name,
+                            vendorID: allNodes[i].node.vendorID,
+                            productID: allNodes[i].node.productID,
+                            vendorName: allNodes[i].node.vendorName,
+                            speed: allNodes[i].node.speed,
+                            busPowerMA: allNodes[i].node.busPowerMA,
+                            locationID: allNodes[i].node.locationID,
+                            portNumber: allNodes[i].node.portNumber,
+                            isHub: allNodes[i].node.isHub,
+                            deviceClass: allNodes[i].node.deviceClass,
+                            serialPort: port.path,
+                            children: []
+                        ),
+                        rawLocationID: allNodes[i].rawLocationID
+                    )
+                    break
+                }
+            }
+        }
+
+        // Step 3: Build tree using location ID hierarchy
+        // macOS USB location IDs encode the topology:
+        // Bits 31-24: Bus number
+        // Bits 23-20: Port of first hub
+        // Bits 19-16: Port of second hub
+        // etc. — each nibble is a port number in the chain
+        // A device's parent is found by zeroing out its last non-zero nibble
+
+        // Separate hubs from leaf devices
+        var hubMap: [Int: TopologyNode] = [:]
+        var leafNodes: [RawNode] = []
+
+        for raw in allNodes {
+            if raw.node.isHub {
+                hubMap[raw.rawLocationID] = raw.node
+            } else {
+                leafNodes.append(raw)
+            }
+        }
+
+        // Assign leaf devices to their parent hub
+        for raw in leafNodes {
+            let parentLoc = parentLocationID(raw.rawLocationID)
+            if hubMap[parentLoc] != nil {
+                hubMap[parentLoc]!.children.append(raw.node)
+            } else {
+                // No parent hub found — treat as root-level device
+                hubMap[raw.rawLocationID] = raw.node
+            }
+        }
+
+        // Nest child hubs under parent hubs
+        let hubLocationIDs = Array(hubMap.keys).sorted()
+        var rootNodes: [TopologyNode] = []
+
+        // Sort by depth (number of non-zero nibbles) so we process children before parents
+        let sortedByDepth = hubLocationIDs.sorted { a, b in
+            nibbleDepth(a) > nibbleDepth(b)
+        }
+
+        var consumed: Set<Int> = []
+
+        for locID in sortedByDepth {
+            if consumed.contains(locID) { continue }
+            let parentLoc = parentLocationID(locID)
+            if parentLoc != locID && hubMap[parentLoc] != nil {
+                hubMap[parentLoc]!.children.append(hubMap[locID]!)
+                consumed.insert(locID)
+            }
+        }
+
+        // Remaining unconsumed hubs are root-level
+        for locID in hubLocationIDs {
+            if !consumed.contains(locID) {
+                if let node = hubMap[locID] {
+                    rootNodes.append(node)
+                }
+            }
+        }
+
+        // Sort children by port number
+        func sortChildren(_ node: inout TopologyNode) {
+            node.children.sort { $0.portNumber < $1.portNumber }
+            for i in node.children.indices {
+                sortChildren(&node.children[i])
+            }
+        }
+        for i in rootNodes.indices {
+            sortChildren(&rootNodes[i])
+        }
+
+        return rootNodes.sorted { $0.locationID < $1.locationID }
+    }
+
+    /// Get the parent location ID by zeroing out the last non-zero nibble (bits 23-0)
+    private static func parentLocationID(_ locationID: Int) -> Int {
+        // Bits 31-24 are bus number, bits 23-0 encode the port chain in nibbles
+        let busNumber = locationID & 0xFF000000
+        var portBits = locationID & 0x00FFFFFF
+
+        // Find the last non-zero nibble in the port chain and zero it
+        // Nibbles from bit 23 down to bit 0: positions 5,4,3,2,1,0
+        for shift in stride(from: 0, through: 20, by: 4) {
+            let nibble = (portBits >> shift) & 0xF
+            if nibble != 0 {
+                portBits &= ~(0xF << shift)
+                break
+            }
+        }
+
+        return busNumber | portBits
+    }
+
+    /// Count the number of non-zero nibbles in the port chain (bits 23-0)
+    private static func nibbleDepth(_ locationID: Int) -> Int {
+        let portBits = locationID & 0x00FFFFFF
+        var count = 0
+        for shift in stride(from: 0, through: 20, by: 4) {
+            if (portBits >> shift) & 0xF != 0 {
+                count += 1
+            }
+        }
+        return count
+    }
+
     // MARK: - Private helpers
 
     private static func getStringProperty(_ service: io_service_t, _ key: String) -> String? {
