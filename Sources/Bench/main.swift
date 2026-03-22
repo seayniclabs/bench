@@ -47,6 +47,24 @@ func startServer() async throws {
             return handleListSerialPorts(params: params)
         case "hub_topology":
             return handleHubTopology(params: params)
+        case "tag_device":
+            return handleTagDevice(params: params)
+        case "port_reset":
+            return handlePortReset(params: params)
+        case "power_info":
+            return handlePowerInfo(params: params)
+        case "monitor_events":
+            return handleMonitorEvents(params: params)
+        case "snapshot_state":
+            return handleSnapshotState(params: params)
+        case "diagnose_device":
+            return handleDiagnoseDevice(params: params)
+        case "device_descriptors":
+            return handleDeviceDescriptors(params: params)
+        case "flash_firmware":
+            return handleFlashFirmware(params: params)
+        case "hid_send":
+            return handleHIDSend(params: params)
         default:
             return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
         }
@@ -480,5 +498,652 @@ func enrichSingleDevice(_ device: inout USBDevice, with volumes: [VolumeInfo]) {
             }
             return // Found a match, done
         }
+    }
+}
+
+// MARK: - Tag Device Handler
+
+func handleTagDevice(params: CallTool.Parameters) -> CallTool.Result {
+    guard let action = params.arguments?["action"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: action")], isError: true)
+    }
+
+    switch action.lowercased() {
+    case "set":
+        guard let identifier = params.arguments?["identifier"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: identifier (needed for 'set')")], isError: true)
+        }
+        guard let tag = params.arguments?["tag"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: tag (needed for 'set')")], isError: true)
+        }
+        let (success, message) = TagManager.setTag(identifier: identifier, tag: tag)
+        return .init(content: [.text(message)], isError: !success)
+
+    case "get":
+        guard let identifier = params.arguments?["identifier"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: identifier (needed for 'get')")], isError: true)
+        }
+        let (success, message) = TagManager.getTag(identifier: identifier)
+        return .init(content: [.text(message)], isError: !success)
+
+    case "list":
+        let (_, message) = TagManager.listTags()
+        return .init(content: [.text(message)])
+
+    case "remove":
+        guard let identifier = params.arguments?["identifier"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: identifier (needed for 'remove')")], isError: true)
+        }
+        let (success, message) = TagManager.removeTag(identifier: identifier)
+        return .init(content: [.text(message)], isError: !success)
+
+    default:
+        return .init(content: [.text("Invalid action '\(action)'. Use: set, get, list, or remove")], isError: true)
+    }
+}
+
+// MARK: - Port Reset Handler
+
+func handlePortReset(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    guard let confirm = params.arguments?["confirm"]?.boolValue else {
+        return .init(content: [.text("Missing required parameter: confirm (must be true to proceed)")], isError: true)
+    }
+
+    if !confirm {
+        return .init(
+            content: [.text("Port reset aborted — confirm must be true. This operation can disrupt active USB transfers.")],
+            isError: true
+        )
+    }
+
+    let (success, message) = DeviceControlBridge.resetDevice(identifier: identifier)
+    return .init(content: [.text(message)], isError: !success)
+}
+
+// MARK: - Power Info Handler
+
+func handlePowerInfo(params: CallTool.Parameters) -> CallTool.Result {
+    if let identifier = params.arguments?["identifier"]?.stringValue, !identifier.isEmpty {
+        let (success, message) = PowerBridge.powerInfo(identifier: identifier)
+        return .init(content: [.text(message)], isError: !success)
+    } else {
+        let (_, message) = PowerBridge.powerSummaryAll()
+        return .init(content: [.text(message)])
+    }
+}
+
+// MARK: - Monitor Events Handler
+
+func handleMonitorEvents(params: CallTool.Parameters) -> CallTool.Result {
+    let clear = params.arguments?["clear"]?.boolValue ?? false
+
+    let events: [EventMonitor.USBEvent]
+    if clear {
+        events = EventMonitor.shared.clear()
+    } else {
+        events = EventMonitor.shared.poll()
+    }
+
+    if events.isEmpty {
+        let msg = clear
+            ? "Event log cleared. Current USB state captured as baseline."
+            : "No USB events recorded yet. Current state captured as baseline — call again to detect changes."
+        return .init(content: [.text(msg)])
+    }
+
+    let formatter = DateFormatter()
+    formatter.dateFormat = "HH:mm:ss"
+
+    var lines: [String] = ["USB Event Log (\(events.count) event\(events.count == 1 ? "" : "s")):"]
+    lines.append("")
+
+    for event in events {
+        let ts = formatter.string(from: event.timestamp)
+        let arrow = event.eventType == "connected" ? "+" : "-"
+        let vid = String(format: "0x%04X", event.vendorID)
+        let pid = String(format: "0x%04X", event.productID)
+        lines.append("  [\(ts)] \(arrow) \(event.eventType.uppercased()): \(event.deviceName)")
+        lines.append("         VID/PID: \(vid)/\(pid)  Location: \(event.locationID)")
+        if !event.serialNumber.isEmpty {
+            lines.append("         Serial: \(event.serialNumber)")
+        }
+    }
+
+    return .init(content: [.text(lines.joined(separator: "\n"))])
+}
+
+// MARK: - Snapshot State Handler
+
+func handleSnapshotState(params: CallTool.Parameters) -> CallTool.Result {
+    guard let action = params.arguments?["action"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: action")], isError: true)
+    }
+
+    switch action.lowercased() {
+    case "capture":
+        let name = params.arguments?["name"]?.stringValue
+        let snapshot = SnapshotManager.shared.capture(name: name)
+        let output = """
+        Snapshot captured:
+          Name: \(snapshot.name)
+          Timestamp: \(snapshot.timestamp)
+          Devices: \(snapshot.devices.count)
+
+        Device list:
+        \(snapshot.devices.map { "  - \($0.name) [\($0.vendorName)] (\($0.locationID))" }.joined(separator: "\n"))
+        """
+        return .init(content: [.text(output)])
+
+    case "list":
+        let snapshots = SnapshotManager.shared.list()
+        if snapshots.isEmpty {
+            return .init(content: [.text("No snapshots saved. Use action: \"capture\" to save one.")])
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        var lines = ["Saved snapshots (\(snapshots.count)):"]
+        lines.append("")
+        for s in snapshots {
+            lines.append("  \(s.name)  —  \(formatter.string(from: s.timestamp))  (\(s.deviceCount) devices)")
+        }
+        return .init(content: [.text(lines.joined(separator: "\n"))])
+
+    case "compare":
+        guard let name = params.arguments?["name"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: name (snapshot to compare from)")], isError: true)
+        }
+        let compareTo = params.arguments?["compare_to"]?.stringValue
+
+        guard let result = SnapshotManager.shared.compare(name: name, compareTo: compareTo) else {
+            let target = compareTo ?? name
+            return .init(content: [.text("Snapshot '\(target)' not found.")], isError: true)
+        }
+
+        var lines = ["Comparison: \(result.fromName) → \(result.toName)"]
+        lines.append("")
+
+        if result.added.isEmpty && result.removed.isEmpty && result.changed.isEmpty {
+            lines.append("  No differences found.")
+        } else {
+            if !result.added.isEmpty {
+                lines.append("  ADDED (\(result.added.count)):")
+                for d in result.added {
+                    lines.append("    + \(d.name) [\(d.vendorName)] (\(d.locationID))")
+                }
+                lines.append("")
+            }
+
+            if !result.removed.isEmpty {
+                lines.append("  REMOVED (\(result.removed.count)):")
+                for d in result.removed {
+                    lines.append("    - \(d.name) [\(d.vendorName)] (\(d.locationID))")
+                }
+                lines.append("")
+            }
+
+            if !result.changed.isEmpty {
+                lines.append("  CHANGED (\(result.changed.count)):")
+                for pair in result.changed {
+                    lines.append("    ~ \(pair.old.name) (\(pair.old.locationID))")
+                    if pair.old.usbSpeed != pair.new.usbSpeed {
+                        lines.append("        Speed: \(pair.old.usbSpeed) → \(pair.new.usbSpeed)")
+                    }
+                    if pair.old.busPowerMA != pair.new.busPowerMA {
+                        lines.append("        Power: \(pair.old.busPowerMA) mA → \(pair.new.busPowerMA) mA")
+                    }
+                    if pair.old.deviceType != pair.new.deviceType {
+                        lines.append("        Type: \(pair.old.deviceType) → \(pair.new.deviceType)")
+                    }
+                    if pair.old.name != pair.new.name {
+                        lines.append("        Name: \(pair.old.name) → \(pair.new.name)")
+                    }
+                }
+            }
+        }
+
+        return .init(content: [.text(lines.joined(separator: "\n"))])
+
+    case "delete":
+        guard let name = params.arguments?["name"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: name (snapshot to delete)")], isError: true)
+        }
+        if SnapshotManager.shared.delete(name: name) {
+            return .init(content: [.text("Snapshot '\(name)' deleted.")])
+        } else {
+            return .init(content: [.text("Snapshot '\(name)' not found.")], isError: true)
+        }
+
+    default:
+        return .init(content: [.text("Invalid action '\(action)'. Use: capture, list, compare, or delete")], isError: true)
+    }
+}
+
+// MARK: - Diagnose Device Handler
+
+func handleDiagnoseDevice(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    let timeframe = params.arguments?["timeframe"]?.stringValue ?? "1h"
+
+    // Validate timeframe
+    let validTimeframes = ["1h", "6h", "24h"]
+    guard validTimeframes.contains(timeframe) else {
+        return .init(
+            content: [.text("Invalid timeframe '\(timeframe)'. Use: 1h, 6h, or 24h")],
+            isError: true
+        )
+    }
+
+    let result = DiagnosticsBridge.diagnose(identifier: identifier, timeframe: timeframe)
+
+    var lines = ["USB Diagnostics for: \(result.identifier)"]
+    lines.append("Timeframe: last \(result.timeframe)")
+    lines.append("")
+
+    if result.errorCount == 0 && result.logEntries.isEmpty {
+        lines.append("No USB errors found for this device in the last \(result.timeframe).")
+    } else {
+        lines.append("Errors found: \(result.errorCount)")
+
+        if !result.errorTypes.isEmpty {
+            lines.append("")
+            lines.append("Error breakdown:")
+            for (errorType, count) in result.errorTypes.sorted(by: { $0.value > $1.value }) {
+                lines.append("  \(errorType): \(count)")
+            }
+        }
+
+        if let lastTs = result.lastErrorTimestamp {
+            lines.append("")
+            lines.append("Last error: \(lastTs)")
+        }
+
+        if !result.logEntries.isEmpty {
+            lines.append("")
+            lines.append("Recent log entries (\(result.logEntries.count)):")
+            for entry in result.logEntries {
+                lines.append("  \(entry)")
+            }
+        }
+    }
+
+    return .init(content: [.text(lines.joined(separator: "\n"))])
+}
+
+// MARK: - Device Descriptors Handler
+
+func handleDeviceDescriptors(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    guard let desc = DescriptorBridge.readDescriptors(identifier: identifier) else {
+        return .init(content: [.text("No device found matching '\(identifier)'")], isError: true)
+    }
+
+    var lines: [String] = []
+
+    // Device Descriptor
+    lines.append("USB Device Descriptor")
+    lines.append("=====================")
+    lines.append("  Device: \(desc.deviceName)")
+    lines.append("  bcdUSB: \(desc.bcdUSB)")
+    lines.append("  bDeviceClass: \(desc.bDeviceClass) (\(descriptorDeviceClassName(desc.bDeviceClass)))")
+    lines.append("  bDeviceSubClass: \(desc.bDeviceSubClass)")
+    lines.append("  bDeviceProtocol: \(desc.bDeviceProtocol)")
+    lines.append("  bMaxPacketSize0: \(desc.bMaxPacketSize0)")
+    lines.append("  idVendor: \(String(format: "0x%04X", desc.vendorID))")
+    lines.append("  idProduct: \(String(format: "0x%04X", desc.productID))")
+    lines.append("  bcdDevice: \(desc.bcdDevice)")
+    lines.append("  iManufacturer: \(desc.iManufacturer)")
+    lines.append("  iProduct: \(desc.iProduct)")
+    lines.append("  iSerialNumber: \(desc.iSerialNumber)")
+    lines.append("  bNumConfigurations: \(desc.bNumConfigurations)")
+
+    // Configuration Descriptors
+    for (configIdx, config) in desc.configurations.enumerated() {
+        lines.append("")
+        lines.append("  Configuration \(configIdx + 1)")
+        lines.append("  ─────────────────")
+        lines.append("    bConfigurationValue: \(config.bConfigurationValue)")
+        lines.append("    bmAttributes: \(String(format: "0x%02X", config.bmAttributes)) (\(descriptorAttributesDescription(config.bmAttributes)))")
+        lines.append("    bMaxPower: \(config.bMaxPower) mA")
+        lines.append("    bNumInterfaces: \(config.bNumInterfaces)")
+
+        // Interface Descriptors
+        for iface in config.interfaces {
+            lines.append("")
+            lines.append("    Interface \(iface.bInterfaceNumber) (Alt \(iface.bAlternateSetting))")
+            lines.append("    ───────────────────")
+            lines.append("      bInterfaceClass: \(iface.bInterfaceClass) (\(iface.className))")
+            lines.append("      bInterfaceSubClass: \(iface.bInterfaceSubClass)")
+            lines.append("      bInterfaceProtocol: \(iface.bInterfaceProtocol)")
+            if !iface.iInterface.isEmpty {
+                lines.append("      iInterface: \(iface.iInterface)")
+            }
+            lines.append("      bNumEndpoints: \(iface.bNumEndpoints)")
+
+            // Endpoint Descriptors
+            for ep in iface.endpoints {
+                let addrHex = String(format: "0x%02X", ep.bEndpointAddress)
+                lines.append("")
+                lines.append("      Endpoint \(addrHex) (\(ep.direction))")
+                lines.append("        Transfer Type: \(ep.transferType)")
+                lines.append("        wMaxPacketSize: \(ep.wMaxPacketSize)")
+                lines.append("        bInterval: \(ep.bInterval)")
+            }
+        }
+    }
+
+    return .init(content: [.text(lines.joined(separator: "\n"))])
+}
+
+func descriptorDeviceClassName(_ classCode: Int) -> String {
+    switch classCode {
+    case 0x00: return "Defined at Interface Level"
+    case 0x02: return "Communications"
+    case 0x09: return "Hub"
+    case 0xEF: return "Miscellaneous"
+    case 0xFF: return "Vendor Specific"
+    default: return String(format: "0x%02X", classCode)
+    }
+}
+
+func descriptorAttributesDescription(_ attrs: Int) -> String {
+    var parts: [String] = []
+    if attrs & 0x40 != 0 { parts.append("Self-Powered") }
+    if attrs & 0x20 != 0 { parts.append("Remote Wakeup") }
+    if parts.isEmpty { parts.append("Bus-Powered") }
+    return parts.joined(separator: ", ")
+}
+
+// MARK: - Flash Firmware Handler
+
+func handleFlashFirmware(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    guard let firmwarePath = params.arguments?["firmware_path"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: firmware_path")], isError: true)
+    }
+
+    guard let confirm = params.arguments?["confirm"]?.boolValue else {
+        return .init(content: [.text("Missing required parameter: confirm (must be true — flashing is destructive)")], isError: true)
+    }
+
+    if !confirm {
+        return .init(
+            content: [.text("Flash aborted — confirm must be true. Flashing overwrites the device's firmware and is destructive.")],
+            isError: true
+        )
+    }
+
+    // Validate firmware file
+    let validation = FirmwareBridge.validateFirmware(path: firmwarePath)
+    if !validation.valid {
+        return .init(content: [.text(validation.message)], isError: true)
+    }
+
+    // Find the device
+    let device = IOKitBridge.findDevice(identifier: identifier)
+
+    // Determine the flashing tool
+    let flashTool: FirmwareBridge.FlashTool
+    if let toolOverride = params.arguments?["tool"]?.stringValue {
+        switch toolOverride.lowercased() {
+        case "esptool":
+            flashTool = .esptool
+        case "dfu-util", "dfuutil", "dfu_util":
+            flashTool = .dfuUtil
+        case "avrdude":
+            flashTool = .avrdude
+        case "uf2":
+            flashTool = .uf2
+        default:
+            return .init(
+                content: [.text("Unknown tool '\(toolOverride)'. Use: esptool, dfu-util, avrdude, or uf2")],
+                isError: true
+            )
+        }
+    } else {
+        guard let detected = FirmwareBridge.detectTool(device: device, firmwarePath: firmwarePath) else {
+            return .init(
+                content: [.text("Could not auto-detect flashing tool for this device/firmware combination. Use the 'tool' parameter to specify: esptool, dfu-util, avrdude, or uf2")],
+                isError: true
+            )
+        }
+        flashTool = detected
+    }
+
+    // Check tool is installed
+    let (installed, toolPath) = FirmwareBridge.isToolInstalled(flashTool)
+    if !installed {
+        return .init(
+            content: [.text("\(flashTool.rawValue) is not installed. Install it first:\n" + installHint(for: flashTool))],
+            isError: true
+        )
+    }
+
+    // Determine serial port
+    let port: String?
+    if let portOverride = params.arguments?["port"]?.stringValue {
+        port = portOverride
+    } else if let device = device {
+        // Try to find the serial port for this device
+        var enriched = [device]
+        SerialPortBridge.enrichDevices(&enriched)
+        port = enriched[0].serialPort
+    } else {
+        port = nil
+    }
+
+    let baud: Int?
+    if let baudValue = params.arguments?["baud"]?.intValue {
+        baud = baudValue
+    } else {
+        baud = nil
+    }
+
+    // Show the command that will be run
+    let previewCommand: String
+    if flashTool == .uf2 {
+        let volumePath = FirmwareBridge.findUF2Volume() ?? "/Volumes/<UF2_VOLUME>"
+        let fileName = (firmwarePath as NSString).lastPathComponent
+        previewCommand = "cp \(firmwarePath) \(volumePath)/\(fileName)"
+    } else {
+        previewCommand = FirmwareBridge.buildCommand(
+            tool: flashTool,
+            toolPath: toolPath,
+            firmwarePath: firmwarePath,
+            port: port,
+            baud: baud
+        ) ?? "(unknown)"
+    }
+
+    // Execute the flash
+    let result = FirmwareBridge.flash(
+        tool: flashTool,
+        toolPath: toolPath,
+        firmwarePath: firmwarePath,
+        port: port,
+        baud: baud
+    )
+
+    let deviceName = device?.name ?? identifier
+    var output = """
+    Flash Firmware — \(deviceName)
+      Tool: \(flashTool.rawValue)
+      Firmware: \(firmwarePath)
+      Command: \(previewCommand)
+      Status: \(result.success ? "SUCCESS" : "FAILED")
+      Message: \(result.message)
+    """
+
+    if !result.output.isEmpty {
+        output += "\n\n  Output:\n\(result.output.split(separator: "\n").map { "    \($0)" }.joined(separator: "\n"))"
+    }
+
+    return .init(content: [.text(output)], isError: !result.success)
+}
+
+private func installHint(for tool: FirmwareBridge.FlashTool) -> String {
+    switch tool {
+    case .esptool:
+        return "  pip install esptool\n  or: brew install esptool"
+    case .dfuUtil:
+        return "  brew install dfu-util"
+    case .avrdude:
+        return "  brew install avrdude"
+    case .uf2:
+        return "  (no tool needed — UF2 uses file copy)"
+    }
+}
+
+// MARK: - HID Send Handler
+
+func handleHIDSend(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    guard let action = params.arguments?["action"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: action (send_report, get_report, or list_reports)")], isError: true)
+    }
+
+    // Find the device
+    guard let device = IOKitBridge.findDevice(identifier: identifier) else {
+        return .init(content: [.text("No device found matching '\(identifier)'")], isError: true)
+    }
+
+    // Validate device is a HID device
+    if !HIDBridge.isHIDDevice(device) {
+        return .init(
+            content: [.text("'\(device.name)' (class \(device.deviceClass)/\(device.deviceSubclass)) does not appear to be a HID device.")],
+            isError: true
+        )
+    }
+
+    let reportID = params.arguments?["report_id"]?.intValue ?? 0
+
+    switch action.lowercased() {
+    case "send_report":
+        // Require confirmation for sending
+        guard let confirm = params.arguments?["confirm"]?.boolValue, confirm else {
+            return .init(
+                content: [.text("send_report requires confirm=true — sending data to a device is potentially destructive.")],
+                isError: true
+            )
+        }
+
+        guard let dataStr = params.arguments?["data"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: data (hex string of bytes to send)")], isError: true)
+        }
+
+        guard let bytes = HIDBridge.parseHexData(dataStr) else {
+            return .init(
+                content: [.text("Invalid hex data '\(dataStr)'. Use format like '0x01 0xFF 0x00' or '01ff00'")],
+                isError: true
+            )
+        }
+
+        let reportTypeStr = params.arguments?["report_type"]?.stringValue ?? "output"
+        guard let reportType = parseReportType(reportTypeStr) else {
+            return .init(content: [.text("Invalid report_type '\(reportTypeStr)'. Use: output or feature")], isError: true)
+        }
+
+        let result = HIDBridge.sendReport(
+            vendorID: device.vendorID,
+            productID: device.productID,
+            reportType: reportType,
+            reportID: reportID,
+            data: bytes
+        )
+
+        let output = """
+        HID Send Report — \(device.name)
+          Vendor: \(String(format: "0x%04X", device.vendorID))
+          Product: \(String(format: "0x%04X", device.productID))
+          Report Type: \(reportTypeStr)
+          Report ID: \(reportID)
+          Data Sent: \(result.data ?? dataStr)
+          Status: \(result.success ? "SUCCESS" : "FAILED")
+          Message: \(result.message)
+        """
+        return .init(content: [.text(output)], isError: !result.success)
+
+    case "get_report":
+        let reportTypeStr = params.arguments?["report_type"]?.stringValue ?? "feature"
+        guard let reportType = parseReportType(reportTypeStr) else {
+            return .init(content: [.text("Invalid report_type '\(reportTypeStr)'. Use: output or feature")], isError: true)
+        }
+
+        let result = HIDBridge.getReport(
+            vendorID: device.vendorID,
+            productID: device.productID,
+            reportType: reportType,
+            reportID: reportID
+        )
+
+        var output = """
+        HID Get Report — \(device.name)
+          Vendor: \(String(format: "0x%04X", device.vendorID))
+          Product: \(String(format: "0x%04X", device.productID))
+          Report Type: \(reportTypeStr)
+          Report ID: \(reportID)
+          Status: \(result.success ? "SUCCESS" : "FAILED")
+          Message: \(result.message)
+        """
+
+        if let data = result.data {
+            output += "\n  Data: \(data)"
+        }
+
+        return .init(content: [.text(output)], isError: !result.success)
+
+    case "list_reports":
+        let (success, summary, reports) = HIDBridge.listReports(
+            vendorID: device.vendorID,
+            productID: device.productID
+        )
+
+        if !success {
+            return .init(content: [.text(summary)], isError: true)
+        }
+
+        var output = summary
+
+        if !reports.isEmpty {
+            output += "\n\n  Available Reports:"
+            for report in reports {
+                output += "\n    - \(report.reportType) (id=\(report.reportID), max \(report.reportSize) bytes)"
+            }
+        } else {
+            output += "\n\n  No standard report descriptors found via IOKit properties."
+        }
+
+        return .init(content: [.text(output)])
+
+    default:
+        return .init(
+            content: [.text("Invalid action '\(action)'. Use: send_report, get_report, or list_reports")],
+            isError: true
+        )
+    }
+}
+
+private func parseReportType(_ str: String) -> HIDBridge.ReportType? {
+    switch str.lowercased() {
+    case "output": return .output
+    case "feature": return .feature
+    default: return nil
     }
 }

@@ -107,6 +107,196 @@ public enum Bench {
                 ]),
                 "required": .array([])
             ])
-        )
+        ),
+        Tool(
+            name: "tag_device",
+            description: "Set, get, list, or remove persistent user-defined aliases (tags) for USB devices. Tags are stored locally and survive reconnections.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "action": .object([
+                        "type": .string("string"),
+                        "description": .string("Action to perform: set, get, list, or remove")
+                    ]),
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name (required for set, get, remove)")
+                    ]),
+                    "tag": .object([
+                        "type": .string("string"),
+                        "description": .string("The alias/tag to assign to the device (required for set)")
+                    ])
+                ]),
+                "required": .array([.string("action")])
+            ])
+        ),
+        Tool(
+            name: "port_reset",
+            description: "Reset a USB port to recover a frozen or unresponsive device. Simulates an unplug/replug cycle via IOKit re-enumeration. Only works on external/removable devices.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name")
+                    ]),
+                    "confirm": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Must be true to proceed — port reset can disrupt active transfers")
+                    ])
+                ]),
+                "required": .array([.string("identifier"), .string("confirm")])
+            ])
+        ),
+        Tool(
+            name: "power_info",
+            description: "Report USB power draw and capabilities for devices — bus power available, current draw, self-powered vs bus-powered, hub power budgets, and charging type detection",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name. If omitted, shows power summary for all devices.")
+                    ])
+                ]),
+                "required": .array([])
+            ])
+        ),
+        Tool(
+            name: "monitor_events",
+            description: "Monitor USB connect/disconnect events. Uses a polling approach — first call snapshots current state, subsequent calls report what changed since last check. Maintains a circular buffer of the last 50 events.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "clear": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Clear the event log and re-snapshot current state (default: false)")
+                    ])
+                ]),
+                "required": .array([])
+            ])
+        ),
+        Tool(
+            name: "snapshot_state",
+            description: "Capture and compare USB device state snapshots. Save current state to a named snapshot, list snapshots, compare two snapshots or compare a snapshot to current state, or delete a snapshot.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "action": .object([
+                        "type": .string("string"),
+                        "description": .string("Action to perform: capture, list, compare, or delete")
+                    ]),
+                    "name": .object([
+                        "type": .string("string"),
+                        "description": .string("Snapshot name (for capture: name to save as; for compare: snapshot to compare from; for delete: snapshot to remove). Default: timestamp-based name.")
+                    ]),
+                    "compare_to": .object([
+                        "type": .string("string"),
+                        "description": .string("For compare action: name of second snapshot to compare against. If omitted, compares to current live state.")
+                    ])
+                ]),
+                "required": .array([.string("action")])
+            ])
+        ),
+        Tool(
+            name: "diagnose_device",
+            description: "Query macOS system logs and IOKit for USB errors related to a specific device. Reports error count, error types, and recent log entries.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or device name")
+                    ]),
+                    "timeframe": .object([
+                        "type": .string("string"),
+                        "description": .string("How far back to search: 1h, 6h, or 24h (default: 1h)")
+                    ])
+                ]),
+                "required": .array([.string("identifier")])
+            ])
+        ),
+        Tool(
+            name: "device_descriptors",
+            description: "Read full USB descriptor chain for a device — device descriptor, configuration descriptors, interface descriptors, and endpoint descriptors with class codes, transfer types, and max packet sizes",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or device name")
+                    ])
+                ]),
+                "required": .array([.string("identifier")])
+            ])
+        ),
+        Tool(
+            name: "flash_firmware",
+            description: "Flash firmware to a USB device. Supports ESP32 (esptool), STM32 (dfu-util), Arduino AVR (avrdude), and RP2040 (UF2 copy). Shows the exact command before executing. Requires confirm=true — flashing is destructive.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name")
+                    ]),
+                    "firmware_path": .object([
+                        "type": .string("string"),
+                        "description": .string("Path to the firmware file (.bin, .hex, .uf2, .elf)")
+                    ]),
+                    "tool": .object([
+                        "type": .string("string"),
+                        "description": .string("Override auto-detection: esptool, dfu-util, avrdude, or uf2")
+                    ]),
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port override (auto-detected from device if not specified)")
+                    ]),
+                    "baud": .object([
+                        "type": .string("integer"),
+                        "description": .string("Baud rate for serial flashing (default varies by tool)")
+                    ]),
+                    "confirm": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Must be true — flashing is a destructive operation")
+                    ])
+                ]),
+                "required": .array([.string("identifier"), .string("firmware_path"), .string("confirm")])
+            ])
+        ),
+        Tool(
+            name: "hid_send",
+            description: "Interact with USB HID (Human Interface Devices). Send output/feature reports, read input/feature reports, or list available report descriptors. Useful for controlling Stream Decks, macro pads, and custom HID devices.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name")
+                    ]),
+                    "action": .object([
+                        "type": .string("string"),
+                        "description": .string("Action to perform: send_report, get_report, or list_reports")
+                    ]),
+                    "report_type": .object([
+                        "type": .string("string"),
+                        "description": .string("Report type: output or feature (default: output for send, feature for get)")
+                    ]),
+                    "report_id": .object([
+                        "type": .string("integer"),
+                        "description": .string("Report ID (default: 0)")
+                    ]),
+                    "data": .object([
+                        "type": .string("string"),
+                        "description": .string("Hex string of bytes to send, e.g. '0x01 0xFF 0x00' or '01ff00'")
+                    ]),
+                    "confirm": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Required for send_report — sending data to a device is potentially destructive")
+                    ])
+                ]),
+                "required": .array([.string("identifier"), .string("action")])
+            ])
+        ),
     ]
 }
