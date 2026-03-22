@@ -12,20 +12,48 @@ No API keys. No drivers. One command to install.
 
 ## What it does
 
+16 tools across three categories:
+
+### Discovery
+
 | Tool | Description |
 |------|-------------|
-| `list_usb_devices` | List all connected USB devices with type, vendor, speed, and serial port info |
+| `ping` | Health check — returns server status, version, macOS version |
+| `list_usb_devices` | List all connected USB devices with vendor, type, speed, serial |
 | `get_device_info` | Detailed info on a specific device by serial, location ID, or name |
-| `identify_device` | Recognize common maker boards (Arduino, Raspberry Pi Pico, ESP32, etc.) |
+| `identify_device` | Smart identification of 83+ known maker/dev boards |
+| `list_serial_ports` | Enumerate serial ports with USB device matching |
+| `hub_topology` | USB hub tree view showing port hierarchy and connections |
+| `device_descriptors` | Full USB descriptor chain — interfaces, endpoints, class codes |
+
+### Monitoring
+
+| Tool | Description |
+|------|-------------|
+| `monitor_events` | Detect USB connect/disconnect events between calls |
+| `snapshot_state` | Capture and diff USB device state snapshots |
+| `diagnose_device` | Query system logs for USB errors on a specific device |
+| `power_info` | Per-device power draw, bus budgets, charging detection |
+
+### Management
+
+| Tool | Description |
+|------|-------------|
 | `eject_device` | Safely unmount and eject removable storage |
-| `ping` | Health check |
+| `tag_device` | Persistent user-defined aliases for devices |
+| `port_reset` | Reset a USB port to recover frozen devices |
+| `flash_firmware` | Flash firmware via esptool/dfu-util/avrdude/UF2 |
+| `hid_send` | Send/receive raw HID reports |
 
 ## Features
 
 - **Device classification** — automatically categorizes devices as storage, input, hub, video, serial adapter, microcontroller, or debugger
 - **Serial port detection** — maps USB devices to their `/dev/cu.*` serial ports (the #1 question makers ask)
-- **35+ known boards** — recognizes Arduino, Raspberry Pi, ESP32, Adafruit, SparkFun, Teensy, STM32, and common USB-serial chips
+- **83+ known boards** — recognizes Arduino, Raspberry Pi, ESP32, Adafruit, SparkFun, Teensy, STM32, and common USB-serial chips
 - **Storage info** — mount points, capacity, and free space for USB drives
+- **USB monitoring** — event tracking, state snapshots, diagnostic log queries, and power analysis
+- **Firmware flashing** — flash ESP32, STM32, Arduino AVR, and RP2040 boards directly
+- **HID interaction** — send and receive reports from Stream Decks, macro pads, and custom HID devices
 
 ## Requirements
 
