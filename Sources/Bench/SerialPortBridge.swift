@@ -8,11 +8,18 @@ enum SerialPortBridge {
         let path: String           // e.g. "/dev/cu.usbserial-2120"
         let locationHint: String?  // extracted location suffix, e.g. "2120"
         let type: PortType
+        let deviceType: DeviceCategory
 
         enum PortType: String, Sendable {
             case usbSerial          // CH340, CP210x, FTDI, etc.
             case usbModem           // CDC ACM devices (Arduino Leonardo, native USB boards)
             case other
+        }
+
+        enum DeviceCategory: String, Sendable {
+            case usb = "usb"
+            case bluetooth = "bluetooth"
+            case builtIn = "built_in"
         }
     }
 
@@ -41,11 +48,77 @@ enum SerialPortBridge {
             ports.append(SerialPort(
                 path: path,
                 locationHint: locationHint,
-                type: type
+                type: type,
+                deviceType: .usb
             ))
         }
 
         return ports
+    }
+
+    /// Discover all serial ports on the system, including Bluetooth and built-in
+    static func allPorts(filterDeviceType: SerialPort.DeviceCategory? = nil) -> [SerialPort] {
+        let fm = FileManager.default
+        var ports: [SerialPort] = []
+
+        guard let entries = try? fm.contentsOfDirectory(atPath: "/dev") else {
+            return []
+        }
+
+        for entry in entries.sorted() {
+            guard entry.hasPrefix("cu.") else { continue }
+
+            let path = "/dev/\(entry)"
+
+            // Classify by device category
+            let deviceCategory: SerialPort.DeviceCategory
+            let portType: SerialPort.PortType
+            let locationHint: String?
+
+            if entry.hasPrefix("cu.Bluetooth") || entry.hasPrefix("cu.BLE") {
+                deviceCategory = .bluetooth
+                portType = .other
+                locationHint = nil
+            } else if entry == "cu.wlan-debug" || entry.hasPrefix("cu.debug") {
+                deviceCategory = .builtIn
+                portType = .other
+                locationHint = nil
+            } else {
+                let (classified, hint) = classifyPort(entry)
+                if classified == .other {
+                    // Unrecognized cu.* — treat as built-in
+                    deviceCategory = .builtIn
+                    portType = .other
+                    locationHint = nil
+                } else {
+                    deviceCategory = .usb
+                    portType = classified
+                    locationHint = hint
+                }
+            }
+
+            // Apply filter
+            if let filter = filterDeviceType, filter != deviceCategory {
+                continue
+            }
+
+            ports.append(SerialPort(
+                path: path,
+                locationHint: locationHint,
+                type: portType,
+                deviceType: deviceCategory
+            ))
+        }
+
+        return ports
+    }
+
+    /// Try to match a serial port to a USB device from the provided device list
+    static func matchDevice(port: SerialPort, devices: [USBDevice]) -> USBDevice? {
+        guard let hint = port.locationHint else { return nil }
+        return devices.first { device in
+            locationMatches(locationID: device.locationID, portHint: hint)
+        }
     }
 
     /// Match discovered serial ports to USB devices by location ID

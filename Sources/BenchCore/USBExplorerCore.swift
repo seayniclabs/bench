@@ -79,6 +79,34 @@ public enum Bench {
                 ]),
                 "required": .array([.string("identifier")])
             ])
+        ),
+        Tool(
+            name: "list_serial_ports",
+            description: "Enumerate all serial ports on the system with their associated USB device info, type classification, and matched device details",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "device_type": .object([
+                        "type": .string("string"),
+                        "description": .string("Filter by port type: usb, bluetooth, built_in, or all (default: all)")
+                    ])
+                ]),
+                "required": .array([])
+            ])
+        ),
+        Tool(
+            name: "hub_topology",
+            description: "Display the USB hub topology tree showing which devices are connected to which hubs and ports, with speeds and power draw",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "include_internal": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Show Apple internal hubs and devices (default: false)")
+                    ])
+                ]),
+                "required": .array([])
+            ])
         )
     ]
 }
