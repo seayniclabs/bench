@@ -63,6 +63,8 @@ func startServer() async throws {
             return handleDeviceDescriptors(params: params)
         case "flash_firmware":
             return handleFlashFirmware(params: params)
+        case "chip_detect":
+            return handleChipDetect(params: params)
         case "hid_send":
             return handleHIDSend(params: params)
         default:
@@ -1006,6 +1008,120 @@ private func installHint(for tool: FirmwareBridge.FlashTool) -> String {
     case .uf2:
         return "  (no tool needed — UF2 uses file copy)"
     }
+}
+
+// MARK: - Chip Detect Handler
+
+func handleChipDetect(params: CallTool.Parameters) -> CallTool.Result {
+    guard let identifier = params.arguments?["identifier"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: identifier")], isError: true)
+    }
+
+    // Check esptool is installed
+    let (installed, toolPath) = FirmwareBridge.isToolInstalled(.esptool)
+    if !installed {
+        return .init(
+            content: [.text("esptool is not installed. Install it first:\n  pip install esptool\n  or: brew install esptool")],
+            isError: true
+        )
+    }
+
+    // Find the device
+    let device = IOKitBridge.findDevice(identifier: identifier)
+
+    // Determine serial port
+    let port: String
+    if let portOverride = params.arguments?["port"]?.stringValue {
+        port = portOverride
+    } else if let dev = device {
+        var enriched = [dev]
+        SerialPortBridge.enrichDevices(&enriched)
+        if let serialPort = enriched[0].serialPort {
+            port = serialPort
+        } else {
+            return .init(
+                content: [.text("No serial port found for device '\(identifier)'. Connect via USB or specify a port manually.")],
+                isError: true
+            )
+        }
+    } else {
+        return .init(
+            content: [.text("No device found matching '\(identifier)'. Connect the device or specify a serial port.")],
+            isError: true
+        )
+    }
+
+    // Prefer 'esptool' over deprecated 'esptool.py', and 'chip-id' over deprecated 'chip_id'
+    let executable = toolPath ?? "esptool"
+    let command = "\(executable) --port \(port) chip-id"
+
+    // Execute
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = ["-c", command]
+
+    let stdout = Pipe()
+    let stderr = Pipe()
+    process.standardOutput = stdout
+    process.standardError = stderr
+
+    do {
+        try process.run()
+        process.waitUntilExit()
+    } catch {
+        return .init(
+            content: [.text("Failed to execute esptool: \(error.localizedDescription)")],
+            isError: true
+        )
+    }
+
+    let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+    let outStr = String(data: outData, encoding: .utf8) ?? ""
+    let errStr = String(data: errData, encoding: .utf8) ?? ""
+    let combined = [outStr, errStr].filter { !$0.isEmpty }.joined(separator: "\n")
+
+    let success = process.terminationStatus == 0
+
+    let deviceName = device?.name ?? identifier
+    var output = """
+    Chip Detect — \(deviceName)
+      Port: \(port)
+      Command: \(command)
+      Status: \(success ? "SUCCESS" : "FAILED")
+    """
+
+    if !combined.isEmpty {
+        // Parse key fields from esptool output
+        var chip = ""
+        var features = ""
+        var crystal = ""
+        var mac = ""
+
+        for line in combined.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("Chip is ") {
+                chip = String(trimmed.dropFirst(8))
+            } else if trimmed.hasPrefix("Features:") {
+                features = String(trimmed.dropFirst(10))
+            } else if trimmed.hasPrefix("Crystal is") {
+                crystal = String(trimmed.dropFirst(11))
+            } else if trimmed.hasPrefix("MAC:") {
+                mac = String(trimmed.dropFirst(5))
+            }
+        }
+
+        if !chip.isEmpty {
+            output += "\n\n  Chip: \(chip)"
+            if !features.isEmpty { output += "\n  Features: \(features)" }
+            if !crystal.isEmpty { output += "\n  Crystal: \(crystal)" }
+            if !mac.isEmpty { output += "\n  MAC: \(mac)" }
+        }
+
+        output += "\n\n  Raw Output:\n\(combined.split(separator: "\n").map { "    \($0)" }.joined(separator: "\n"))"
+    }
+
+    return .init(content: [.text(output)], isError: !success)
 }
 
 // MARK: - HID Send Handler

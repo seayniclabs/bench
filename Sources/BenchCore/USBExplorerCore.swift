@@ -265,6 +265,24 @@ public enum Bench {
             ])
         ),
         Tool(
+            name: "chip_detect",
+            description: "Detect the exact chip type of a connected microcontroller via esptool. Resolves ambiguous USB identifications (e.g. ESP32-S2 vs S3 when sharing PID 0x1001). Returns chip type, revision, features, crystal frequency, and MAC address.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "identifier": .object([
+                        "type": .string("string"),
+                        "description": .string("Device serial number, location ID, or name")
+                    ]),
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port override (auto-detected from device if not specified)")
+                    ])
+                ]),
+                "required": .array([.string("identifier")])
+            ])
+        ),
+        Tool(
             name: "hid_send",
             description: "Interact with USB HID (Human Interface Devices). Send output/feature reports, read input/feature reports, or list available report descriptors. Useful for controlling Stream Decks, macro pads, and custom HID devices.",
             inputSchema: .object([

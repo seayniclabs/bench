@@ -145,9 +145,9 @@ enum DeviceDatabase {
 
         // ESP32 / Espressif (often via USB-serial chips, but native USB variants exist)
         DeviceKey(vendorID: 0x303A, productID: 0x1001): KnownDevice(
-            name: "ESP32-S2", vendor: "Espressif",
+            name: "ESP32-S2/S3 (JTAG)", vendor: "Espressif",
             category: "microcontroller",
-            notes: "Single-core Xtensa LX7. Native USB. Wi-Fi only (no BLE)."
+            notes: "USB JTAG/serial debug unit. PID 0x1001 is shared by ESP32-S2 and ESP32-S3 in JTAG mode — use chip_detect to identify the exact variant."
         ),
         DeviceKey(vendorID: 0x303A, productID: 0x0002): KnownDevice(
             name: "ESP32-S3", vendor: "Espressif",
