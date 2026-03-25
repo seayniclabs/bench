@@ -12,7 +12,7 @@ No API keys. No drivers. One command to install.
 
 ## What it does
 
-21 tools across four categories:
+22 tools across four categories:
 
 ### Discovery
 
@@ -25,6 +25,7 @@ No API keys. No drivers. One command to install.
 | `list_serial_ports` | Enumerate serial ports with USB device matching |
 | `hub_topology` | USB hub tree view showing port hierarchy and connections |
 | `device_descriptors` | Full USB descriptor chain — interfaces, endpoints, class codes |
+| `chip_detect` | Detect exact chip type of ESP32/microcontroller via esptool |
 
 ### Monitoring
 
