@@ -2,7 +2,7 @@ import MCP
 
 public enum Bench {
     public static let serverName = "bench"
-    public static let serverVersion = "0.1.0"
+    public static let serverVersion = "0.2.0"
 
     public static let toolNames: [String] = tools.map(\.name)
 
