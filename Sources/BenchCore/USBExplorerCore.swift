@@ -316,5 +316,111 @@ public enum Bench {
                 "required": .array([.string("identifier"), .string("action")])
             ])
         ),
+        Tool(
+            name: "serial_open",
+            description: "Open a serial connection to a port (e.g. /dev/cu.usbserial-2120). Configures baud rate, data bits, stop bits, and parity for raw communication.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path, e.g. /dev/cu.usbserial-2120")
+                    ]),
+                    "baud_rate": .object([
+                        "type": .string("integer"),
+                        "description": .string("Baud rate (default: 115200). Common values: 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400")
+                    ]),
+                    "data_bits": .object([
+                        "type": .string("integer"),
+                        "description": .string("Data bits: 5, 6, 7, or 8 (default: 8)")
+                    ]),
+                    "stop_bits": .object([
+                        "type": .string("integer"),
+                        "description": .string("Stop bits: 1 or 2 (default: 1)")
+                    ]),
+                    "parity": .object([
+                        "type": .string("string"),
+                        "description": .string("Parity: none, even, or odd (default: none)")
+                    ])
+                ]),
+                "required": .array([.string("port")])
+            ])
+        ),
+        Tool(
+            name: "serial_read",
+            description: "Read available data from an open serial connection. Returns whatever is in the receive buffer, waiting up to the timeout for data to arrive.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path (must be opened with serial_open first)")
+                    ]),
+                    "timeout": .object([
+                        "type": .string("number"),
+                        "description": .string("Read timeout in seconds (default: 1.0)")
+                    ])
+                ]),
+                "required": .array([.string("port")])
+            ])
+        ),
+        Tool(
+            name: "serial_write",
+            description: "Write data or a command to an open serial connection. Text is sent as UTF-8 with \\r\\n appended. Hex bytes can be sent as '0x01 0xFF' or '01FF'.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path (must be opened with serial_open first)")
+                    ]),
+                    "data": .object([
+                        "type": .string("string"),
+                        "description": .string("Data to send — text string or hex bytes (e.g. '0x01 0xFF 0x00')")
+                    ])
+                ]),
+                "required": .array([.string("port"), .string("data")])
+            ])
+        ),
+        Tool(
+            name: "serial_close",
+            description: "Close an open serial connection and restore the port to its original state.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path to close")
+                    ])
+                ]),
+                "required": .array([.string("port")])
+            ])
+        ),
+        Tool(
+            name: "serial_monitor",
+            description: "Read from a serial port for a specified duration and return all output. Useful for capturing boot output, log streams, or device responses. Can auto-open the port if not already open.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path, e.g. /dev/cu.usbserial-2120")
+                    ]),
+                    "seconds": .object([
+                        "type": .string("number"),
+                        "description": .string("How long to monitor in seconds (default: 5.0, max: 30.0)")
+                    ]),
+                    "auto_open": .object([
+                        "type": .string("boolean"),
+                        "description": .string("Automatically open the port if not already open (default: false)")
+                    ]),
+                    "baud_rate": .object([
+                        "type": .string("integer"),
+                        "description": .string("Baud rate for auto_open (default: 115200)")
+                    ])
+                ]),
+                "required": .array([.string("port")])
+            ])
+        ),
     ]
 }

@@ -67,6 +67,16 @@ func startServer() async throws {
             return handleChipDetect(params: params)
         case "hid_send":
             return handleHIDSend(params: params)
+        case "serial_open":
+            return handleSerialOpen(params: params)
+        case "serial_read":
+            return handleSerialRead(params: params)
+        case "serial_write":
+            return handleSerialWrite(params: params)
+        case "serial_close":
+            return handleSerialClose(params: params)
+        case "serial_monitor":
+            return handleSerialMonitor(params: params)
         default:
             return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
         }
@@ -1262,4 +1272,95 @@ private func parseReportType(_ str: String) -> HIDBridge.ReportType? {
     case "feature": return .feature
     default: return nil
     }
+}
+
+// MARK: - Serial Communication Handlers
+
+func handleSerialOpen(params: CallTool.Parameters) -> CallTool.Result {
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: port")], isError: true)
+    }
+
+    let baudRate = params.arguments?["baud_rate"]?.intValue ?? 115200
+    let dataBits = params.arguments?["data_bits"]?.intValue ?? 8
+    let stopBits = params.arguments?["stop_bits"]?.intValue ?? 1
+    let parity = params.arguments?["parity"]?.stringValue ?? "none"
+
+    // Validate port path
+    guard port.hasPrefix("/dev/cu.") else {
+        return .init(
+            content: [.text("Invalid port path '\(port)'. macOS serial ports are at /dev/cu.* (e.g. /dev/cu.usbserial-2120)")],
+            isError: true
+        )
+    }
+
+    let (success, message) = SerialCommBridge.shared.open(
+        path: port,
+        baudRate: baudRate,
+        dataBits: dataBits,
+        stopBits: stopBits,
+        parity: parity
+    )
+    return .init(content: [.text(message)], isError: !success)
+}
+
+func handleSerialRead(params: CallTool.Parameters) -> CallTool.Result {
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: port")], isError: true)
+    }
+
+    let timeout = params.arguments?["timeout"]?.doubleValue ?? 1.0
+    let clampedTimeout = min(max(timeout, 0.1), 30.0)
+
+    let (success, message) = SerialCommBridge.shared.read(path: port, timeoutSeconds: clampedTimeout)
+    return .init(content: [.text(message)], isError: !success)
+}
+
+func handleSerialWrite(params: CallTool.Parameters) -> CallTool.Result {
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: port")], isError: true)
+    }
+
+    guard let data = params.arguments?["data"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: data")], isError: true)
+    }
+
+    let (success, message) = SerialCommBridge.shared.write(path: port, data: data)
+    return .init(content: [.text(message)], isError: !success)
+}
+
+func handleSerialClose(params: CallTool.Parameters) -> CallTool.Result {
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: port")], isError: true)
+    }
+
+    let (success, message) = SerialCommBridge.shared.close(path: port)
+    return .init(content: [.text(message)], isError: !success)
+}
+
+func handleSerialMonitor(params: CallTool.Parameters) -> CallTool.Result {
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return .init(content: [.text("Missing required parameter: port")], isError: true)
+    }
+
+    let seconds = params.arguments?["seconds"]?.doubleValue ?? 5.0
+    let clampedSeconds = min(max(seconds, 0.5), 30.0)
+    let autoOpen = params.arguments?["auto_open"]?.boolValue ?? false
+    let baudRate = params.arguments?["baud_rate"]?.intValue ?? 115200
+
+    // Validate port path
+    guard port.hasPrefix("/dev/cu.") else {
+        return .init(
+            content: [.text("Invalid port path '\(port)'. macOS serial ports are at /dev/cu.* (e.g. /dev/cu.usbserial-2120)")],
+            isError: true
+        )
+    }
+
+    let (success, message) = SerialCommBridge.shared.monitor(
+        path: port,
+        seconds: clampedSeconds,
+        autoOpen: autoOpen,
+        baudRate: baudRate
+    )
+    return .init(content: [.text(message)], isError: !success)
 }
