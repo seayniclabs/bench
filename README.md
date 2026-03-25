@@ -12,7 +12,7 @@ No API keys. No drivers. One command to install.
 
 ## What it does
 
-16 tools across three categories:
+21 tools across four categories:
 
 ### Discovery
 
@@ -45,6 +45,16 @@ No API keys. No drivers. One command to install.
 | `flash_firmware` | Flash firmware via esptool/dfu-util/avrdude/UF2 |
 | `hid_send` | Send/receive raw HID reports |
 
+### Serial Communication
+
+| Tool | Description |
+|------|-------------|
+| `serial_open` | Open a serial connection with configurable baud rate, data bits, parity |
+| `serial_read` | Read available data from an open serial connection |
+| `serial_write` | Write data or commands to an open serial connection |
+| `serial_close` | Close an open serial connection |
+| `serial_monitor` | Capture serial output for N seconds (boot logs, debug output) |
+
 ## Features
 
 - **Device classification** — automatically categorizes devices as storage, input, hub, video, serial adapter, microcontroller, or debugger
@@ -54,6 +64,7 @@ No API keys. No drivers. One command to install.
 - **USB monitoring** — event tracking, state snapshots, diagnostic log queries, and power analysis
 - **Firmware flashing** — flash ESP32, STM32, Arduino AVR, and RP2040 boards directly
 - **HID interaction** — send and receive reports from Stream Decks, macro pads, and custom HID devices
+- **Serial communication** — open, read, write, and monitor serial ports with configurable baud rate, data bits, parity, and stop bits
 
 ## Requirements
 
@@ -108,6 +119,8 @@ Once connected, just talk to your AI tool:
 - "Identify the device on /dev/cu.usbserial-2120"
 - "Eject the Samsung T7"
 - "Show me all storage devices"
+- "Open a serial connection to /dev/cu.usbserial-2120 at 9600 baud"
+- "Monitor the serial output from my ESP32 for 10 seconds"
 
 ## How it works
 
