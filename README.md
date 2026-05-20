@@ -146,6 +146,12 @@ swift test              # run tests
 
 Bench requires Swift 6.1+ and targets macOS 14+.
 
+## Using with a Gateway
+
+If you're running multiple MCP servers, route them through a gateway like [`tbxark/mcp-proxy`](https://github.com/tbxark/mcp-proxy) to manage all child processes from a single persistent service. The proxy handles process lifecycle, centralized config, and crash recovery — each server still gets its own SSE endpoint but you manage everything from one config file instead of scattered Claude Code entries.
+
+For a full walkthrough of how this works in practice, see [The Hidden Cost of a Loaded MCP Stack](https://charlieseay.com/blog/mcp-gateway-lazy-loading) on charlieseay.com.
+
 ## License
 
 MIT
