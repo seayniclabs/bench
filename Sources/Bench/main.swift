@@ -8,6 +8,10 @@ func log(_ msg: String) {
     FileHandle.standardError.write(Data("[bench] \(msg)\n".utf8))
 }
 
+if CommandLine.arguments.contains("--doctor") {
+    exit(Doctor.run(env: ProcessInfo.processInfo.environment))
+}
+
 do {
     log("starting server...")
     try await startServer()
@@ -27,7 +31,10 @@ func startServer() async throws {
     let server = Server(
         name: Bench.serverName,
         version: Bench.serverVersion,
+        instructions: Bench.instructions,
         capabilities: Server.Capabilities(
+            prompts: .init(),
+            resources: .init(),
             tools: .init()
         ),
         // Strict mode makes requestElicitation fail fast for clients that did not
@@ -46,6 +53,8 @@ func startServer() async throws {
     await server.withMethodHandler(CallTool.self) { params in
         await callTool(params, settings: settings, server: server)
     }
+
+    await registerSkillHandlers(on: server)
 
     let transport = StdioTransport()
     try await server.start(transport: transport)
@@ -77,8 +86,12 @@ func callTool(_ params: CallTool.Parameters, settings: BenchSettings, server: Se
         return finalize(.init(content: [.text(text)], isError: true), module: module.id, tool: name)
     }
 
-    if DeviceWrites.requiresApproval(tool: name, arguments: params.arguments), !settings.approveDeviceWrites {
-        if let refusal = await askForWriteApproval(params, module: module.id, server: server) {
+    if DeviceWrites.requiresApproval(tool: name, arguments: params.arguments) {
+        let env = ProcessInfo.processInfo.environment
+        if settings.approveDeviceWrites {
+            ApprovalLog.record(env: env, tool: name, decision: .approved,
+                               approvedBy: "BENCH_APPROVE_DEVICE_WRITES", arguments: params.arguments)
+        } else if let refusal = await askForWriteApproval(params, module: module.id, server: server) {
             return finalize(.init(content: [.text(refusal)], isError: true), module: module.id, tool: name)
         }
     }
@@ -100,18 +113,25 @@ func callTool(_ params: CallTool.Parameters, settings: BenchSettings, server: Se
 /// Returns nil when approved, or the error text to send back.
 /// The model's own arguments (for example confirm=true) never count as approval.
 func askForWriteApproval(_ params: CallTool.Parameters, module: String, server: Server) async -> String? {
+    let env = ProcessInfo.processInfo.environment
     let prompt = DeviceWrites.approvalPrompt(tool: params.name, arguments: params.arguments)
+    ApprovalLog.record(env: env, tool: params.name, decision: .requested, approvedBy: nil, arguments: params.arguments)
     do {
         let answer = try await server.requestElicitation(message: prompt, requestedSchema: .init())
         if answer.action == .accept {
+            ApprovalLog.record(env: env, tool: params.name, decision: .approved,
+                               approvedBy: "person (MCP elicitation)", arguments: params.arguments)
             return nil
         }
+        ApprovalLog.record(env: env, tool: params.name, decision: .declined,
+                           approvedBy: "person (MCP elicitation)", arguments: params.arguments)
         return benchErrorText(
             module: module, code: "write_declined",
             message: "The person declined to run \(params.name).",
             fix: "Run it again only if the person wants it, or set BENCH_APPROVE_DEVICE_WRITES=1 to pre-approve device writes."
         )
     } catch {
+        ApprovalLog.record(env: env, tool: params.name, decision: .refused, approvedBy: nil, arguments: params.arguments)
         return benchErrorText(
             module: module, code: "write_not_approved",
             message: "\(params.name) changes a device and no approval was given. This client cannot be asked for approval (MCP elicitation is not available).",
@@ -183,6 +203,10 @@ func route(_ params: CallTool.Parameters, settings: BenchSettings) throws -> Cal
         return handleSerialRead(params: params)
     case "serial_write":
         return handleSerialWrite(params: params)
+    case "serial_write_and_expect":
+        return handleSerialWriteAndExpect(params: params)
+    case "decode_crash":
+        return handleDecodeCrash(params: params)
     case "serial_close":
         return handleSerialClose(params: params)
     case "serial_monitor":
@@ -200,6 +224,9 @@ func handleBenchModules(settings: BenchSettings) -> CallTool.Result {
         lines.append("       tools: \(module.tools.joined(separator: ", "))")
     }
     lines.append("")
+    lines.append("Publisher: Seaynic Labs. Homepage: https://github.com/seayniclabs/bench")
+    lines.append("Skills: \(ServerSkills.all.count) served as MCP prompts and resources. Start with the getting-started prompt.")
+    lines.append("Approval log: \(ApprovalLog.path(env: ProcessInfo.processInfo.environment).path)")
     lines.append(settings.approveDeviceWrites
         ? "Device writes: pre-approved by BENCH_APPROVE_DEVICE_WRITES."
         : "Device writes: each one asks the person for approval.")
@@ -1482,4 +1509,59 @@ func handleSerialMonitor(params: CallTool.Parameters) -> CallTool.Result {
         baudRate: baudRate
     )
     return .init(content: [.text(message)], isError: !success)
+}
+
+func handleSerialWriteAndExpect(params: CallTool.Parameters) -> CallTool.Result {
+    func fail(_ text: String) -> CallTool.Result {
+        .init(content: [.text(text)], isError: true)
+    }
+    guard let port = params.arguments?["port"]?.stringValue else {
+        return fail("Missing required parameter: port")
+    }
+    guard let data = params.arguments?["data"]?.stringValue else {
+        return fail("Missing required parameter: data")
+    }
+    guard let pattern = params.arguments?["pattern"]?.stringValue else {
+        return fail("Missing required parameter: pattern")
+    }
+    if let problem = DevicePath.problem(port) {
+        return fail(problem)
+    }
+    let timeout = min(max(params.arguments?["timeout"]?.doubleValue ?? 5.0, 0.5), 30.0)
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+        return fail("Invalid pattern: \(jsonString(pattern)) is not a valid regular expression.")
+    }
+
+    // Drop anything that arrived before the write, so old output cannot match.
+    _ = SerialCommBridge.shared.receive(path: port, seconds: 0.2)
+    let written = SerialCommBridge.shared.write(path: port, data: data)
+    guard written.success else {
+        return fail(written.message)
+    }
+
+    let started = Date()
+    let deadline = started.addingTimeInterval(timeout)
+    var transcript = ""
+    var matched = false
+    while !matched {
+        let remaining = deadline.timeIntervalSinceNow
+        let chunk = SerialCommBridge.shared.receive(path: port, seconds: min(0.2, max(0.01, remaining)))
+        if let error = chunk.error {
+            return fail(error)
+        }
+        transcript += String(decoding: chunk.data, as: UTF8.self)
+        matched = regex.firstMatch(in: transcript, range: NSRange(transcript.startIndex..., in: transcript)) != nil
+        if matched || Date() >= deadline || transcript.utf8.count > 1_000_000 { break }
+    }
+
+    let shown = transcript.count > 8000 ? "..." + String(transcript.suffix(8000)) : transcript
+    if matched {
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+        return .init(content: [.text("Matched \(jsonString(pattern)) on \(port) after \(elapsed) s.\nTranscript:\n\(shown)")])
+    }
+    return fail(benchErrorText(
+        module: "serial", code: "expect_timeout",
+        message: "No match for \(jsonString(pattern)) on \(port) within \(String(format: "%.1f", timeout)) s. Transcript: \(shown)",
+        fix: "Check that the device prints the expected text after this input, then call again with a longer timeout."
+    ))
 }

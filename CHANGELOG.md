@@ -2,6 +2,31 @@
 
 All notable changes to Bench are recorded here. Versions follow semver.
 
+## 0.4.0
+
+Bundle release: tools, skills and trust. Bench now ships skills next to the server, served to any MCP app as prompts and resources.
+
+### Added
+- Skills in `skills/`, served as one MCP prompt per skill and one resource per file (`skill://bench/<skill>/<path>`): `getting-started`, `board-bring-up`, `serial-debugging`, `safe-flashing`, and `systematic-debugging` (MIT, from obra/superpowers, see CREDITS.md).
+- `decode_crash` (read-only, module `debug`, off by default): resolves the program counters in an ESP32 Guru Meditation Error or an ARM HardFault dump with addr2line and the matching `.elf`. Finds the toolchain on PATH, or at `BENCH_ADDR2LINE`. A missing toolchain names what to install.
+- `serial_write_and_expect` (needs approval, like `serial_write`): writes a line and reads until a regular expression matches or the timeout passes. Returns the transcript.
+- `bench --doctor`: checks the modules, USB and serial access, esptool, addr2line, approvals, the skills folder and the network stance. Prints a `FIX` line per problem and exits 1 when something needs fixing.
+- Local approval log, `~/.local/state/bench/approvals.jsonl` (or `BENCH_APPROVAL_LOG`). Every device-write approval asked, granted, declined, refused or pre-approved is appended. Payloads are not logged.
+- Server instructions for every client, naming the getting-started prompt. Discovery (`bench_modules`) names the publisher, the homepage, the skills and the approval log.
+- Tool and prompt lock (`tool-manifest.lock.json`), generated security card, `SECURITY.md`, `CREDITS.md`, `.claude-plugin/plugin.json`, `.mcp.json`.
+- Scripts: `check_skills.py`, `tool_lock.py`, `security_card.py`.
+
+### Changed
+- 25 tools (was 23). Default install lists 24; `decode_crash` appears when `BENCH_DEBUG_ENABLED=1`.
+- A write to a port that is not open returns `bench.serial.port_not_open` with a fix, instead of the generic error.
+- `serial_write_and_expect` needs approval, like `serial_write`. `decode_crash` is read-only.
+- CI checks the skills, the tool lock and the security card, and expects 24 tools by default.
+
+### Compatibility
+- Existing tool names and arguments are unchanged.
+- New module `debug` ships switched off (`BENCH_DEBUG_ENABLED=1` turns it on). Modules shipped before 0.4.0 keep their defaults.
+- The Homebrew formula installs the skills to `share/bench/skills`. A binary run from anywhere else finds them through `BENCH_SKILLS_DIR`.
+
 ## 0.3.0
 
 Bundle release. Bench is now one MCP server with modules you can switch on or off.

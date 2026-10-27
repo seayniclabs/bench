@@ -17,17 +17,17 @@ struct StdioServerTests {
         return root.appendingPathComponent(".build/debug/Bench").path
     }()
 
-    @Test("Starts with an empty environment, reports 0.3.0, lists 23 tools with schemas")
+    @Test("Starts with an empty environment, reports 0.4.0, lists 24 tools with schemas")
     func emptyEnvironmentStart() throws {
         let client = try StdioClient(env: [:])
         defer { client.close() }
         let initResponse = try client.initialize(capabilities: [:])
         let serverInfo = (initResponse["result"] as? [String: Any])?["serverInfo"] as? [String: Any]
         #expect(serverInfo?["name"] as? String == "bench")
-        #expect(serverInfo?["version"] as? String == "0.3.0")
+        #expect(serverInfo?["version"] as? String == "0.4.0")
 
         let tools = try client.listTools()
-        #expect(tools.count == 23)
+        #expect(tools.count == 24, "debug is switched off by default, so decode_crash is not listed")
         for tool in tools {
             #expect(tool["outputSchema"] != nil, "\(tool["name"] ?? "?") has no outputSchema")
             #expect(tool["annotations"] != nil, "\(tool["name"] ?? "?") has no annotations")
@@ -40,7 +40,7 @@ struct StdioServerTests {
         defer { client.close() }
         _ = try client.initialize(capabilities: [:])
         let names = try client.listTools().compactMap { $0["name"] as? String }
-        #expect(names.count == 23)
+        #expect(names.count == 24)
 
         for name in names {
             let response = try client.call(name, arguments: [:])
@@ -183,7 +183,7 @@ final class StdioClient {
         try write(["jsonrpc": "2.0", "method": method])
     }
 
-    private func request(_ method: String, _ params: [String: Any]) throws -> [String: Any] {
+    func request(_ method: String, _ params: [String: Any]) throws -> [String: Any] {
         let id = nextID
         nextID += 1
         try write(["jsonrpc": "2.0", "id": id, "method": method, "params": params])

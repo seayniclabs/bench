@@ -2,7 +2,10 @@ import MCP
 
 public enum Bench {
     public static let serverName = "bench"
-    public static let serverVersion = "0.3.0"
+    public static let serverVersion = "0.4.0"
+
+    /// Sent to every client at startup. Plain instructions only: no links, no promotion.
+    public static let instructions = "Bench finds USB maker boards (Arduino, ESP32, Raspberry Pi Pico) and their serial ports, and talks to them. Call bench_modules first: it lists the modules that are on and their tools. Skills (MCP prompts and resources) explain how to do the job well; start with the getting-started prompt. Device-changing tools ask the person for approval. Errors read 'bench.<module>.<code>: <message> Fix: <hint>'."
 
     /// Every tool, with annotations and output schema attached.
     public static let tools: [Tool] = baseTools.map(decorate)
@@ -383,6 +386,50 @@ public enum Bench {
                     ])
                 ]),
                 "required": .array([.string("port"), .string("data")])
+            ])
+        ),
+        Tool(
+            name: "serial_write_and_expect",
+            description: "Write a line to an open serial connection, then read until a regex matches or the timeout passes. Returns the transcript and whether the pattern matched. Needs approval, like serial_write.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "port": .object([
+                        "type": .string("string"),
+                        "description": .string("Serial port path, opened with serial_open first (e.g. /dev/cu.usbserial-2120)")
+                    ]),
+                    "data": .object([
+                        "type": .string("string"),
+                        "description": .string("Text to send. A CR LF is appended unless it already ends in a newline.")
+                    ]),
+                    "pattern": .object([
+                        "type": .string("string"),
+                        "description": .string("Regular expression to wait for in the device output, for example 'OK|ERROR' or '^> $'")
+                    ]),
+                    "timeout": .object([
+                        "type": .string("number"),
+                        "description": .string("Seconds to wait for the pattern (default: 5.0, min 0.5, max 30.0)")
+                    ])
+                ]),
+                "required": .array([.string("port"), .string("data"), .string("pattern")])
+            ])
+        ),
+        Tool(
+            name: "decode_crash",
+            description: "Decode an ESP32 Guru Meditation Error backtrace or an ARM HardFault register dump into source file and line, using addr2line and the matching .elf file. Read-only. Needs the toolchain's addr2line on PATH, or BENCH_ADDR2LINE set.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "output": .object([
+                        "type": .string("string"),
+                        "description": .string("The serial output that contains the crash dump (the Guru Meditation line and Backtrace, or the HardFault register lines). Up to 64 KB.")
+                    ]),
+                    "elf": .object([
+                        "type": .string("string"),
+                        "description": .string("Absolute path to the .elf built from the same source as the crashing firmware")
+                    ])
+                ]),
+                "required": .array([.string("output"), .string("elf")])
             ])
         ),
         Tool(

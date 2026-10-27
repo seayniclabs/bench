@@ -44,7 +44,7 @@ public enum BenchModules {
         defaultEnabled: true,
         tools: [
             "list_serial_ports", "serial_open", "serial_read", "serial_write",
-            "serial_close", "serial_monitor",
+            "serial_write_and_expect", "serial_close", "serial_monitor",
         ]
     )
 
@@ -64,8 +64,17 @@ public enum BenchModules {
         tools: ["hid_send"]
     )
 
+    /// Added in 0.4.0, so it ships switched off (opt-in growth). Read-only.
+    public static let debug = BenchModule(
+        id: "debug",
+        title: "Crash decoding",
+        summary: "Turn an ESP32 Guru Meditation or ARM HardFault dump into source lines with addr2line",
+        defaultEnabled: false,
+        tools: ["decode_crash"]
+    )
+
     /// Every module, core first. Order is the order shown by bench_modules.
-    public static let all: [BenchModule] = [core, usb, serial, firmware, hid]
+    public static let all: [BenchModule] = [core, usb, serial, firmware, hid, debug]
 
     public static func module(for tool: String) -> BenchModule? {
         all.first { $0.tools.contains(tool) }
@@ -160,6 +169,8 @@ public func normalizeErrorText(module: String, tool: String, text: String) -> St
         (code, fix) = ("unknown_tool", "Call bench_modules to list the tools that are available.")
     } else if text.hasPrefix("Snapshot ") {
         (code, fix) = ("not_found", "Run snapshot_state with action list to see saved snapshots.")
+    } else if text.hasPrefix("Port ") && text.hasSuffix("Use serial_open first.") {
+        (code, fix) = ("port_not_open", "Call serial_open with the port first, then retry.")
     } else if text.hasPrefix("Eject failed") {
         (code, fix) = ("eject_failed", "Quit apps that use the volume, then retry. Use force only if you accept losing unsaved data.")
     } else {
@@ -174,7 +185,8 @@ public func normalizeErrorText(module: String, tool: String, text: String) -> St
 public enum DeviceWrites {
     /// chip_detect is here because esptool resets the chip into its bootloader.
     public static let tools: Set<String> = [
-        "eject_device", "port_reset", "flash_firmware", "serial_write", "hid_send", "chip_detect",
+        "eject_device", "port_reset", "flash_firmware", "serial_write", "serial_write_and_expect",
+        "hid_send", "chip_detect",
     ]
 
     /// hid_send needs approval for every action except the known read actions.
@@ -205,7 +217,7 @@ public enum DeviceWrites {
 }
 
 /// Quotes and escapes a string the way JSON does, so control characters show.
-func jsonString(_ text: String) -> String {
+public func jsonString(_ text: String) -> String {
     let data = (try? JSONSerialization.data(withJSONObject: [text], options: [])) ?? Data()
     let encoded = String(decoding: data, as: UTF8.self)
     let inner = String(encoded.dropFirst().dropLast())
@@ -245,7 +257,7 @@ extension Bench {
     static let readOnlyTools: Set<String> = [
         "ping", "bench_modules", "list_usb_devices", "get_device_info", "identify_device",
         "list_serial_ports", "hub_topology", "power_info", "monitor_events", "diagnose_device",
-        "device_descriptors", "serial_read", "serial_monitor",
+        "device_descriptors", "serial_read", "serial_monitor", "decode_crash",
     ]
 
     /// Adds MCP annotations and the output schema to a tool definition.

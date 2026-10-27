@@ -18,14 +18,23 @@ jobs:
       - name: Build (release)
         run: swift build -c release
 
-      - name: Run tests (includes the empty-environment stdio start)
+      - name: Run tests (includes the empty-environment stdio start, skills and approval log)
         run: swift test
 
-      - name: Check release binary starts and lists 23 tools
+      - name: Check release binary starts, lists 24 tools by default, and serves 5 skill prompts
         run: |
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' > /tmp/in.jsonl
-          (cat /tmp/in.jsonl; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 2) | env -i PATH=/usr/bin:/bin .build/release/Bench 2>/dev/null > /tmp/out.jsonl
-          python3 -c "import json; L=[json.loads(l) for l in open('/tmp/out.jsonl') if l.strip()]; assert [x for x in L if x.get('id')==1][0]['result']['serverInfo']['version']=='0.3.0'; assert len([x for x in L if x.get('id')==2][0]['result']['tools'])==23; print('ok')"
+          (cat /tmp/in.jsonl; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"prompts/list"}'; sleep 2) | env -i PATH=/usr/bin:/bin HOME=/tmp .build/release/Bench 2>/dev/null > /tmp/out.jsonl
+          python3 -c "import json; L=[json.loads(l) for l in open('/tmp/out.jsonl') if l.strip()]; by={x.get('id'):x for x in L}; assert by[1]['result']['serverInfo']['version']=='0.4.0'; assert len(by[2]['result']['tools'])==24; assert len(by[3]['result']['prompts'])==5; print('ok')"
+
+      - name: Check the tool and prompt lock
+        run: python3 scripts/tool_lock.py --check --binary .build/release/Bench
+
+      - name: Check the security card is current
+        run: python3 scripts/security_card.py --check --binary .build/release/Bench
+
+      - name: Check skills (license, source, credit, no site links in bodies)
+        run: python3 scripts/check_skills.py
 
   scan:
     runs-on: ubuntu-latest

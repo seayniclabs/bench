@@ -15,7 +15,9 @@ struct ModulesTests {
     @Test("Defaults keep every module on, and core is always on")
     func defaults() {
         let settings = BenchSettings.load(env: [:])
-        #expect(settings.enabledModules == Set(BenchModules.all.map(\.id)))
+        // Modules added in 0.4.0 (debug) ship switched off; everything shipped earlier stays on.
+        #expect(settings.enabledModules == Set(BenchModules.all.filter(\.defaultEnabled).map(\.id)))
+        #expect(!settings.isEnabled("debug"))
         #expect(settings.approveDeviceWrites == false)
         #expect(settings.warnings.isEmpty)
     }

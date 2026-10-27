@@ -147,16 +147,29 @@ final class SerialCommBridge: @unchecked Sendable {
 
     /// Read available data from an open serial connection
     func read(path: String, timeoutSeconds: Double = 1.0) -> (success: Bool, message: String) {
+        let received = receive(path: path, seconds: timeoutSeconds)
+        if let error = received.error { return (false, error) }
+        if received.data.isEmpty {
+            return (true, "No data available on \(path) (timeout: \(String(format: "%.1f", timeoutSeconds))s)")
+        }
+        let text = String(data: received.data, encoding: .utf8)
+            ?? received.data.map { String(format: "%02X", $0) }.joined(separator: " ")
+        return (true, text)
+    }
+
+    /// Collects whatever arrives within `seconds`. `error` is set when the port is not
+    /// open or a read fails. Used by read and by serial_write_and_expect.
+    func receive(path: String, seconds: Double) -> (data: Data, error: String?) {
         lock.lock()
         guard let conn = connections[path] else {
             lock.unlock()
-            return (false, "Port \(path) is not open. Use serial_open first.")
+            return (Data(), "Port \(path) is not open. Use serial_open first.")
         }
         lock.unlock()
 
         let fd = conn.fd
         var collected = Data()
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        let deadline = Date().addingTimeInterval(seconds)
 
         // Use select() for timeout-based reading
         while Date() < deadline {
@@ -184,23 +197,13 @@ final class SerialCommBridge: @unchecked Sendable {
                         continue
                     }
                     let err = String(cString: strerror(errno))
-                    return (false, "Read error on \(path): \(err)")
+                    return (collected, "Read error on \(path): \(err)")
                 }
             }
         }
-
-        if collected.isEmpty {
-            return (true, "No data available on \(path) (timeout: \(String(format: "%.1f", timeoutSeconds))s)")
-        }
-
-        let text = String(data: collected, encoding: .utf8)
-            ?? collected.map { String(format: "%02X", $0) }.joined(separator: " ")
-        return (true, text)
+        return (collected, nil)
     }
 
-    // MARK: - Write
-
-    /// Write data to an open serial connection
     func write(path: String, data: String) -> (success: Bool, message: String) {
         lock.lock()
         guard let conn = connections[path] else {
