@@ -7,7 +7,8 @@ let package = Package(
         .macOS(.v14)
     ],
     dependencies: [
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.12.1")
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.12.1"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.5.0")
     ],
     targets: [
         .target(
@@ -21,7 +22,8 @@ let package = Package(
             name: "Bench",
             dependencies: [
                 "BenchCore",
-                .product(name: "MCP", package: "swift-sdk")
+                .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log")
             ],
             path: "Sources/Bench",
             exclude: ["Bench.entitlements", "Info.plist"],

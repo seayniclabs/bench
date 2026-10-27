@@ -56,7 +56,7 @@ func startServer() async throws {
 
     await registerSkillHandlers(on: server)
 
-    let transport = StdioTransport()
+    let transport = GuardedTransport()
     try await server.start(transport: transport)
     await server.waitUntilCompleted()
 }

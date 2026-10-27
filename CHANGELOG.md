@@ -2,6 +2,11 @@
 
 All notable changes to Bench are recorded here. Versions follow semver.
 
+## 0.4.1
+
+### Fixed
+- Bench now answers requests that arrive before `initialize` with the request's own id: `ping` gets an empty result, anything else gets "method not found". Clients on MCP 2026-07-28, such as Antigravity, open with `server/discover`; the Swift SDK answered it under a different id, so those clients waited forever and never connected. They now fall back to `initialize` and connect. Tested in Antigravity CLI.
+
 ## 0.4.0
 
 Bundle release: tools, skills and trust. Bench now ships skills next to the server, served to any MCP app as prompts and resources.

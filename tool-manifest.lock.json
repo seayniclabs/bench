@@ -1,6 +1,6 @@
 {
   "bundle": "bench",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "entries": {
     "instructions": "02a72504688ff56f8ed97c4461b0a9b5848b841b1fcd8e3b93eeb7f0be420035",
     "prompt:board-bring-up": "4047f0ed69df42f550c572d731115dec91e5f91dee9584b15b787395a3a73f12",
