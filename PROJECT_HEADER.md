@@ -2,16 +2,17 @@
 
 **Type:** MCP server (free; native macOS, Swift)  
 **Status:** active  
-**Owner:** Charlie  
-**Last Updated:** 2026-10-20
+**Owner:** Seaynic Labs  
+**Last Updated:** 2026-10-27
 
 ## Purpose
 USB hardware discovery for AI tools: a native macOS MCP server that lets Claude Code, Cursor and Windsurf see connected USB hardware. No API keys, no drivers. Repo github.com/seayniclabs/bench.
 
 ## Current State
-- Working: all 22 tools pass (CMDB release status, verified 2026-10-19: builds, 11/11 tests, v0.2.0).
-- Installs with Homebrew: `brew install seayniclabs/tap/bench`.
-- One of the two MCPs in the free catalog on Bridge (with Lathe). Blueprint stored in the KB ("Bench — Blueprint").
+- Version 0.3.0 (bundle release). 23 tools in five modules: core, usb, serial, firmware, hid.
+- Builds with Xcode 27.1 / Swift 6.4 on MCP swift-sdk 0.12.1. Tests pass.
+- Device-changing tools ask for approval; see README Safety.
+- Installs with Homebrew: `brew install seayniclabs/tap/bench` (formula still points at v0.2.0 until 0.3.0 is tagged).
 
 ## Next Steps
 

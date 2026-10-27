@@ -227,7 +227,10 @@ enum HIDBridge {
             return nil
         }
 
-        let devices = deviceSet as! Set<IOHIDDevice>
+        guard let devices = deviceSet as? Set<IOHIDDevice> else {
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+            return nil
+        }
 
         guard let device = devices.first else {
             IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))

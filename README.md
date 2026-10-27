@@ -6,80 +6,79 @@
 
 <p align="center"><strong>USB hardware discovery for your AI tools.</strong></p>
 
-Bench is a native macOS [MCP server](https://modelcontextprotocol.io) that gives AI tools like Claude Code, Cursor, and Windsurf visibility into connected USB hardware. It identifies devices, finds serial ports, and recognizes common maker boards — so your AI assistant knows what's on your bench.
+Bench is a native macOS [MCP server](https://modelcontextprotocol.io) for developers who work with hardware plugged into their Mac: Arduino, ESP32, Raspberry Pi Pico and other USB serial boards. It finds the devices, names them, opens the right serial port, and lets your AI tool talk to them.
 
-No API keys. No drivers. One command to install.
+No API keys. No drivers. No network access. One binary.
 
-## What it does
+## Modules
 
-22 tools across four categories:
+Bench is one server made of modules. You switch modules on or off. All modules are on by default.
 
-### Discovery
+| Module | Status | What it does |
+|--------|--------|--------------|
+| `core` | Ready (always on) | Health check and module discovery |
+| `usb` | Ready | Enumerate, identify and inspect USB devices; hub tree; power; events; snapshots; port reset; eject |
+| `serial` | Ready | List serial ports; open, read, write, monitor and close them |
+| `firmware` | Ready (needs the flashing tool installed) | Detect chip type; flash with esptool, dfu-util, avrdude or UF2 |
+| `hid` | Ready | Send and read raw HID reports |
 
-| Tool | Description |
-|------|-------------|
-| `ping` | Health check — returns server status, version, macOS version |
-| `list_usb_devices` | List all connected USB devices with vendor, type, speed, serial |
-| `get_device_info` | Detailed info on a specific device by serial, location ID, or name |
-| `identify_device` | Smart identification of 83+ known maker/dev boards |
-| `list_serial_ports` | Enumerate serial ports with USB device matching |
-| `hub_topology` | USB hub tree view showing port hierarchy and connections |
-| `device_descriptors` | Full USB descriptor chain — interfaces, endpoints, class codes |
-| `chip_detect` | Detect exact chip type of ESP32/microcontroller via esptool |
+Linux is not in this release. It is planned behind the same tools.
 
-### Monitoring
+## Tools
 
-| Tool | Description |
-|------|-------------|
-| `monitor_events` | Detect USB connect/disconnect events between calls |
-| `snapshot_state` | Capture and diff USB device state snapshots |
-| `diagnose_device` | Query system logs for USB errors on a specific device |
-| `power_info` | Per-device power draw, bus budgets, charging detection |
+23 tools in total.
 
-### Management
+**core**: `ping`, `bench_modules`
 
-| Tool | Description |
-|------|-------------|
-| `eject_device` | Safely unmount and eject removable storage |
-| `tag_device` | Persistent user-defined aliases for devices |
-| `port_reset` | Reset a USB port to recover frozen devices |
-| `flash_firmware` | Flash firmware via esptool/dfu-util/avrdude/UF2 |
-| `hid_send` | Send/receive raw HID reports |
+**usb**: `list_usb_devices`, `get_device_info`, `identify_device`, `eject_device`, `hub_topology`, `tag_device`, `port_reset`, `power_info`, `monitor_events`, `snapshot_state`, `diagnose_device`, `device_descriptors`
 
-### Serial Communication
+**serial**: `list_serial_ports`, `serial_open`, `serial_read`, `serial_write`, `serial_close`, `serial_monitor`
 
-| Tool | Description |
-|------|-------------|
-| `serial_open` | Open a serial connection with configurable baud rate, data bits, parity |
-| `serial_read` | Read available data from an open serial connection |
-| `serial_write` | Write data or commands to an open serial connection |
-| `serial_close` | Close an open serial connection |
-| `serial_monitor` | Capture serial output for N seconds (boot logs, debug output) |
+**firmware**: `chip_detect`, `flash_firmware`
 
-## Features
+**hid**: `hid_send`
 
-- **Device classification** — automatically categorizes devices as storage, input, hub, video, serial adapter, microcontroller, or debugger
-- **Serial port detection** — maps USB devices to their `/dev/cu.*` serial ports (the #1 question makers ask)
-- **83+ known boards** — recognizes Arduino, Raspberry Pi, ESP32, Adafruit, SparkFun, Teensy, STM32, and common USB-serial chips
-- **Storage info** — mount points, capacity, and free space for USB drives
-- **USB monitoring** — event tracking, state snapshots, diagnostic log queries, and power analysis
-- **Firmware flashing** — flash ESP32, STM32, Arduino AVR, and RP2040 boards directly
-- **HID interaction** — send and receive reports from Stream Decks, macro pads, and custom HID devices
-- **Serial communication** — open, read, write, and monitor serial ports with configurable baud rate, data bits, parity, and stop bits
+Call `bench_modules` first to see what is on and how to change it.
 
-## Requirements
+## Settings
 
-- macOS 14+ (Sonoma or later) on Apple Silicon
-- An MCP-compatible AI tool (Claude Code, Cursor, Windsurf, etc.)
-- For building from source: Xcode 16.3+ / Swift 6.1+
+All settings are environment variables. Bench starts with an empty environment, and a tool call tells you which variable is missing.
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `BENCH_MODULES` | all modules | Comma list of modules to enable, for example `usb,serial`. `core` is always on. |
+| `BENCH_<MODULE>_ENABLED` | per module | `1` or `0` to switch one module on or off, for example `BENCH_HID_ENABLED=0`. Overrides `BENCH_MODULES`. |
+| `BENCH_APPROVE_DEVICE_WRITES` | off | `1` pre-approves device-changing calls so they run without a prompt. See Safety. |
+
+## Safety
+
+Bench can change hardware, so some calls are gated.
+
+- **Device writes need approval.** `serial_write`, `flash_firmware`, `port_reset`, `eject_device`, and `hid_send` with `action: send_report` change a device or its state. Bench asks you through your client's approval prompt. The prompt shows the full arguments. A flag from the model, such as `confirm: true`, does not count as approval.
+- **Clients that cannot show a prompt are refused.** Set `BENCH_APPROVE_DEVICE_WRITES=1` in the server's environment to allow writes without a prompt. Only do this when you trust every tool call your AI client makes.
+- **Reads are not gated.** Discovery, monitoring, serial reads and chip detection run without a prompt.
+- **Local only.** Bench makes no network calls and needs no root. Serial access on Linux (future) will need the `dialout` group, not sudo.
+- **Tag and snapshot data stays on your Mac.** Nothing is sent anywhere.
+
+## Errors
+
+Every error reads `bench.<module>.<code>: <message> Fix: <hint>`, for example:
+
+```
+bench.serial.write_not_approved: serial_write changes a device and no approval was given. ... Fix: Set BENCH_APPROVE_DEVICE_WRITES=1 in the server's environment and restart it, or use a client that supports MCP elicitation.
+```
+
+Every tool result also has `structuredContent` with `ok`, `module`, `tool` and `text`.
 
 ## Install
 
-### Homebrew (recommended)
+### Homebrew
 
 ```bash
 brew install seayniclabs/tap/bench
 ```
+
+The formula builds from source, so it needs Xcode 16.3 or later. Check `bench_modules` after install to confirm the server is running.
 
 ### From source
 
@@ -92,69 +91,92 @@ codesign --force --sign - --entitlements Sources/Bench/Bench.entitlements .build
 
 The binary is at `.build/release/Bench`.
 
-### Add to Claude Code
+## Connect your AI client
+
+Bench speaks plain MCP over stdio. Use the full path to the binary in each snippet.
+
+**Claude Code**
 
 ```bash
 claude mcp add bench -- $(which bench)
 ```
 
-Or add manually to `~/.claude.json`:
+**Claude Desktop** (`claude_desktop_config.json`)
 
 ```json
 {
   "mcpServers": {
     "bench": {
-      "command": "/path/to/bench",
+      "command": "/absolute/path/to/bench",
       "args": []
     }
   }
 }
 ```
 
+**Cursor** (`~/.cursor/mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "bench": {
+      "command": "/absolute/path/to/bench",
+      "args": []
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`)
+
+```json
+{
+  "servers": {
+    "bench": {
+      "type": "stdio",
+      "command": "/absolute/path/to/bench",
+      "args": []
+    }
+  }
+}
+```
+
+To set a variable, add an `env` object next to `args`, for example `"env": { "BENCH_MODULES": "usb,serial" }`.
+
 ## Usage
 
-Once connected, just talk to your AI tool:
+Once connected, ask your AI tool:
 
 - "What USB devices are connected?"
 - "What port is my Arduino on?"
 - "Identify the device on /dev/cu.usbserial-2120"
-- "Eject the Samsung T7"
-- "Show me all storage devices"
 - "Open a serial connection to /dev/cu.usbserial-2120 at 9600 baud"
 - "Monitor the serial output from my ESP32 for 10 seconds"
 
 ## How it works
 
-Bench uses Apple's [IOKit](https://developer.apple.com/documentation/iokit) framework to enumerate USB devices natively on macOS. It enriches results with serial port detection (`/dev/cu.*` scanning), storage info (`diskutil`), and a built-in database of known maker boards. It communicates with AI tools over stdio using the [Model Context Protocol](https://modelcontextprotocol.io) (JSON-RPC).
+Bench uses Apple's [IOKit](https://developer.apple.com/documentation/iokit) framework to enumerate USB devices. It adds serial port detection (`/dev/cu.*`), storage details from `diskutil`, and a built-in database of known maker boards. It talks to your AI tool over stdio using the [Model Context Protocol](https://modelcontextprotocol.io).
 
 ```
-AI Tool  --stdio/JSON-RPC-->  Bench  --IOKit-->  USB Device Tree
-                                     --diskutil-->  Storage Info
-                                     --/dev/cu.*-->  Serial Ports
-                                     --DeviceDB-->  Board Recognition
+AI client  --stdio/JSON-RPC-->  Bench  --IOKit-->      USB device tree
+                                       --diskutil-->   storage info
+                                       --/dev/cu.*-->  serial ports
+                                       --device DB-->  board recognition
 ```
 
-No special permissions needed. IOKit USB enumeration works without entitlements from a CLI binary.
-
-## Building
+## Build and test
 
 ```bash
 swift build             # debug build
 swift build -c release  # release build
-swift test              # run tests
+swift test              # unit tests and stdio tests
 ```
 
-Bench requires Swift 6.1+ and targets macOS 14+.
-
-## Using with a Gateway
-
-If you're running multiple MCP servers, route them through a gateway like [`tbxark/mcp-proxy`](https://github.com/tbxark/mcp-proxy) to manage all child processes from a single persistent service. The proxy handles process lifecycle, centralized config, and crash recovery — each server still gets its own SSE endpoint but you manage everything from one config file instead of scattered Claude Code entries.
-
-For a full walkthrough of how this works in practice, see [The Hidden Cost of a Loaded MCP Stack](https://REDACTED.com/blog/mcp-gateway-lazy-loading) on REDACTED.com.
+Bench requires Swift 6.1 or later and targets macOS 14 or later. The tests start the built binary with an empty environment, so run `swift build` before `swift test` if you change the server.
 
 ## License
 
-MIT
+MIT. Published by Seaynic Labs.
 
 ## Credits
 

@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: macos-15
@@ -15,5 +18,25 @@ jobs:
       - name: Build (release)
         run: swift build -c release
 
-      - name: Run tests
+      - name: Run tests (includes the empty-environment stdio start)
         run: swift test
+
+      - name: Check release binary starts and lists 23 tools
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' > /tmp/in.jsonl
+          (cat /tmp/in.jsonl; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 2) | env -i PATH=/usr/bin:/bin .build/release/Bench 2>/dev/null > /tmp/out.jsonl
+          python3 -c "import json; L=[json.loads(l) for l in open('/tmp/out.jsonl') if l.strip()]; assert [x for x in L if x.get('id')==1][0]['result']['serverInfo']['version']=='0.3.0'; assert len([x for x in L if x.get('id')==2][0]['result']['tools'])==23; print('ok')"
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # The gitleaks CLI is free; the GitHub Action needs a license for organization repos.
+      - name: gitleaks (full history)
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --no-banner --redact
+      - name: Identifier scan
+        env:
+          IDENTIFIER_PATTERNS: ${{ secrets.IDENTIFIER_PATTERNS }}
+        run: python3 scripts/scan_identifiers.py .

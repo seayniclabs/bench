@@ -138,8 +138,7 @@ final class SnapshotManager: @unchecked Sendable {
 
         var changed: [(old: DeviceEntry, new: DeviceEntry)] = []
         for key in fromKeys.intersection(toKeys) {
-            let old = fromByLocation[key]!
-            let new = toByLocation[key]!
+            guard let old = fromByLocation[key], let new = toByLocation[key] else { continue }
             if old != new {
                 changed.append((old: old, new: new))
             }

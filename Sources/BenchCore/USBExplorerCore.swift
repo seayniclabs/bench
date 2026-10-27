@@ -2,11 +2,14 @@ import MCP
 
 public enum Bench {
     public static let serverName = "bench"
-    public static let serverVersion = "0.2.0"
+    public static let serverVersion = "0.3.0"
+
+    /// Every tool, with annotations and output schema attached.
+    public static let tools: [Tool] = baseTools.map(decorate)
 
     public static let toolNames: [String] = tools.map(\.name)
 
-    public static let tools: [Tool] = [
+    static let baseTools: [Tool] = [
         Tool(
             name: "ping",
             description: "Check if Bench is running and IOKit is available",
@@ -420,6 +423,15 @@ public enum Bench {
                     ])
                 ]),
                 "required": .array([.string("port")])
+            ])
+        ),
+        Tool(
+            name: "bench_modules",
+            description: "List Bench modules: id, title, whether each is enabled in this server, its tools, and how to switch it on or off. Call this first to see what is available.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([:]),
+                "required": .array([])
             ])
         ),
     ]

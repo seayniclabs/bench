@@ -5,9 +5,9 @@ import MCP
 @Suite("Tool Registration")
 struct ToolRegistrationTests {
 
-    @Test("All 22 tools are defined")
+    @Test("All 23 tools are defined")
     func toolCount() {
-        #expect(Bench.tools.count == 22)
+        #expect(Bench.tools.count == 23)
     }
 
     @Test("Tool names match expected set")
@@ -34,7 +34,8 @@ struct ToolRegistrationTests {
             "serial_read",
             "serial_write",
             "serial_close",
-            "serial_monitor"
+            "serial_monitor",
+            "bench_modules"
         ]
         let actual = Set(Bench.toolNames)
         #expect(actual == expected)
@@ -51,7 +52,7 @@ struct ToolRegistrationTests {
     @Test("Server metadata is set")
     func serverMetadata() {
         #expect(Bench.serverName == "bench")
-        #expect(Bench.serverVersion == "0.2.0")
+        #expect(Bench.serverVersion == "0.3.0")
     }
 }
 

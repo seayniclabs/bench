@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.seayniclabs/bench",
+  "description": "USB hardware discovery for AI tools: identify maker boards, find serial ports, talk to devices.",
+  "repository": {
+    "url": "https://github.com/seayniclabs/bench",
+    "source": "github"
+  },
+  "version": "0.3.0",
+  "packages": []
+}

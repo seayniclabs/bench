@@ -19,72 +19,195 @@ do {
 // MARK: - Server
 
 func startServer() async throws {
+    let settings = BenchSettings.load(env: ProcessInfo.processInfo.environment)
+    for warning in settings.warnings {
+        log("config: \(warning)")
+    }
+
     let server = Server(
         name: Bench.serverName,
         version: Bench.serverVersion,
         capabilities: Server.Capabilities(
             tools: .init()
-        )
+        ),
+        // Strict mode makes requestElicitation fail fast for clients that did not
+        // declare elicitation, instead of sending a prompt nobody can answer.
+        configuration: .strict
     )
 
     await server.withMethodHandler(ListTools.self) { _ in
-        .init(tools: Bench.tools)
+        let visible = Bench.tools.filter { tool in
+            guard let module = BenchModules.module(for: tool.name) else { return false }
+            return settings.isEnabled(module.id)
+        }
+        return .init(tools: visible)
     }
 
     await server.withMethodHandler(CallTool.self) { params in
-        switch params.name {
-        case "ping":
-            return handlePing()
-        case "list_usb_devices":
-            return handleListDevices(params: params)
-        case "get_device_info":
-            return try handleGetDeviceInfo(params: params)
-        case "identify_device":
-            return try handleIdentifyDevice(params: params)
-        case "eject_device":
-            return try handleEjectDevice(params: params)
-        case "list_serial_ports":
-            return handleListSerialPorts(params: params)
-        case "hub_topology":
-            return handleHubTopology(params: params)
-        case "tag_device":
-            return handleTagDevice(params: params)
-        case "port_reset":
-            return handlePortReset(params: params)
-        case "power_info":
-            return handlePowerInfo(params: params)
-        case "monitor_events":
-            return handleMonitorEvents(params: params)
-        case "snapshot_state":
-            return handleSnapshotState(params: params)
-        case "diagnose_device":
-            return handleDiagnoseDevice(params: params)
-        case "device_descriptors":
-            return handleDeviceDescriptors(params: params)
-        case "flash_firmware":
-            return handleFlashFirmware(params: params)
-        case "chip_detect":
-            return handleChipDetect(params: params)
-        case "hid_send":
-            return handleHIDSend(params: params)
-        case "serial_open":
-            return handleSerialOpen(params: params)
-        case "serial_read":
-            return handleSerialRead(params: params)
-        case "serial_write":
-            return handleSerialWrite(params: params)
-        case "serial_close":
-            return handleSerialClose(params: params)
-        case "serial_monitor":
-            return handleSerialMonitor(params: params)
-        default:
-            return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
-        }
+        await callTool(params, settings: settings, server: server)
     }
 
     let transport = StdioTransport()
     try await server.start(transport: transport)
     await server.waitUntilCompleted()
+}
+
+// MARK: - Dispatch
+
+/// Every tool call passes through here: module switch, write approval, the
+/// handler, then error and envelope normalization.
+func callTool(_ params: CallTool.Parameters, settings: BenchSettings, server: Server) async -> CallTool.Result {
+    let name = params.name
+    guard let module = BenchModules.module(for: name) else {
+        let text = benchErrorText(
+            module: "core", code: "unknown_tool",
+            message: "Unknown tool '\(name)'.",
+            fix: "Call bench_modules to list the tools that are available."
+        )
+        return finalize(.init(content: [.text(text)], isError: true), module: "core", tool: name)
+    }
+
+    guard settings.isEnabled(module.id) else {
+        let envVar = "BENCH_\(module.id.uppercased())_ENABLED"
+        let text = benchErrorText(
+            module: module.id, code: "module_disabled",
+            message: "Tool '\(name)' is in module '\(module.id)', which is switched off in this server.",
+            fix: "Set \(envVar)=1 (or add \(module.id) to BENCH_MODULES) in the server's environment and restart it."
+        )
+        return finalize(.init(content: [.text(text)], isError: true), module: module.id, tool: name)
+    }
+
+    if DeviceWrites.requiresApproval(tool: name, arguments: params.arguments), !settings.approveDeviceWrites {
+        if let refusal = await askForWriteApproval(params, module: module.id, server: server) {
+            return finalize(.init(content: [.text(refusal)], isError: true), module: module.id, tool: name)
+        }
+    }
+
+    do {
+        let raw = try route(params, settings: settings)
+        return finalize(raw, module: module.id, tool: name)
+    } catch {
+        let text = benchErrorText(
+            module: module.id, code: "tool_failed",
+            message: "\(name) failed: \(error)",
+            fix: "Check the device is connected and that macOS has granted the access this tool needs, then retry."
+        )
+        return finalize(.init(content: [.text(text)], isError: true), module: module.id, tool: name)
+    }
+}
+
+/// Asks the person to approve one device-writing call through MCP elicitation.
+/// Returns nil when approved, or the error text to send back.
+/// The model's own arguments (for example confirm=true) never count as approval.
+func askForWriteApproval(_ params: CallTool.Parameters, module: String, server: Server) async -> String? {
+    let prompt = DeviceWrites.approvalPrompt(tool: params.name, arguments: params.arguments)
+    do {
+        let answer = try await server.requestElicitation(message: prompt, requestedSchema: .init())
+        if answer.action == .accept {
+            return nil
+        }
+        return benchErrorText(
+            module: module, code: "write_declined",
+            message: "The person declined to run \(params.name).",
+            fix: "Run it again only if the person wants it, or set BENCH_APPROVE_DEVICE_WRITES=1 to pre-approve device writes."
+        )
+    } catch {
+        return benchErrorText(
+            module: module, code: "write_not_approved",
+            message: "\(params.name) changes a device and no approval was given. This client cannot be asked for approval (MCP elicitation is not available).",
+            fix: "Set BENCH_APPROVE_DEVICE_WRITES=1 in the server's environment and restart it, or use a client that supports MCP elicitation."
+        )
+    }
+}
+
+/// Attaches the structured envelope and the standard error shape.
+func finalize(_ raw: CallTool.Result, module: String, tool: String) -> CallTool.Result {
+    let isError = raw.isError ?? false
+    var text = raw.content.compactMap { content -> String? in
+        if case .text(let value, _, _) = content { return value }
+        return nil
+    }.joined(separator: "\n")
+    if isError {
+        text = normalizeErrorText(module: module, tool: tool, text: text)
+    }
+    let content: [Tool.Content] = isError ? [.text(text: text, annotations: nil, _meta: nil)] : raw.content
+    let envelope: Value? = BenchEnvelope.make(ok: !isError, module: module, tool: tool, text: text)
+    return .init(
+        content: content,
+        structuredContent: envelope,
+        isError: isError
+    )
+}
+
+func route(_ params: CallTool.Parameters, settings: BenchSettings) throws -> CallTool.Result {
+    switch params.name {
+    case "ping":
+        return handlePing()
+    case "bench_modules":
+        return handleBenchModules(settings: settings)
+    case "list_usb_devices":
+        return handleListDevices(params: params)
+    case "get_device_info":
+        return try handleGetDeviceInfo(params: params)
+    case "identify_device":
+        return try handleIdentifyDevice(params: params)
+    case "eject_device":
+        return try handleEjectDevice(params: params)
+    case "list_serial_ports":
+        return handleListSerialPorts(params: params)
+    case "hub_topology":
+        return handleHubTopology(params: params)
+    case "tag_device":
+        return handleTagDevice(params: params)
+    case "port_reset":
+        return handlePortReset(params: params)
+    case "power_info":
+        return handlePowerInfo(params: params)
+    case "monitor_events":
+        return handleMonitorEvents(params: params)
+    case "snapshot_state":
+        return handleSnapshotState(params: params)
+    case "diagnose_device":
+        return handleDiagnoseDevice(params: params)
+    case "device_descriptors":
+        return handleDeviceDescriptors(params: params)
+    case "flash_firmware":
+        return handleFlashFirmware(params: params)
+    case "chip_detect":
+        return handleChipDetect(params: params)
+    case "hid_send":
+        return handleHIDSend(params: params)
+    case "serial_open":
+        return handleSerialOpen(params: params)
+    case "serial_read":
+        return handleSerialRead(params: params)
+    case "serial_write":
+        return handleSerialWrite(params: params)
+    case "serial_close":
+        return handleSerialClose(params: params)
+    case "serial_monitor":
+        return handleSerialMonitor(params: params)
+    default:
+        return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
+    }
+}
+
+func handleBenchModules(settings: BenchSettings) -> CallTool.Result {
+    var lines = ["Bench modules (bundle version \(Bench.serverVersion)):", ""]
+    for module in BenchModules.all {
+        let state = settings.isEnabled(module.id) ? "on " : "off"
+        lines.append("[\(state)] \(module.id) - \(module.title): \(module.summary)")
+        lines.append("       tools: \(module.tools.joined(separator: ", "))")
+    }
+    lines.append("")
+    lines.append(settings.approveDeviceWrites
+        ? "Device writes: pre-approved by BENCH_APPROVE_DEVICE_WRITES."
+        : "Device writes: each one asks the person for approval.")
+    for warning in settings.warnings {
+        lines.append("Warning: \(warning)")
+    }
+    let text = lines.joined(separator: "\n")
+    return .init(content: [.text(text)])
 }
 
 // MARK: - Tool Handlers

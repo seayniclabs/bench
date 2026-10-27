@@ -284,7 +284,7 @@ enum IOKitBridge {
         for raw in leafNodes {
             let parentLoc = parentLocationID(raw.rawLocationID)
             if hubMap[parentLoc] != nil {
-                hubMap[parentLoc]!.children.append(raw.node)
+                hubMap[parentLoc]?.children.append(raw.node)
             } else {
                 // No parent hub found — treat as root-level device
                 hubMap[raw.rawLocationID] = raw.node
@@ -305,8 +305,8 @@ enum IOKitBridge {
         for locID in sortedByDepth {
             if consumed.contains(locID) { continue }
             let parentLoc = parentLocationID(locID)
-            if parentLoc != locID && hubMap[parentLoc] != nil {
-                hubMap[parentLoc]!.children.append(hubMap[locID]!)
+            if parentLoc != locID && hubMap[parentLoc] != nil, let child = hubMap[locID] {
+                hubMap[parentLoc]?.children.append(child)
                 consumed.insert(locID)
             }
         }
