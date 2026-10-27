@@ -54,7 +54,7 @@ struct ToolRegistrationTests {
     @Test("Server metadata is set")
     func serverMetadata() {
         #expect(Bench.serverName == "bench")
-        #expect(Bench.serverVersion == "0.4.1")
+        #expect(Bench.serverVersion == "0.4.2")
     }
 }
 

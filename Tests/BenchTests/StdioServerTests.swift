@@ -17,14 +17,14 @@ struct StdioServerTests {
         return root.appendingPathComponent(".build/debug/Bench").path
     }()
 
-    @Test("Starts with an empty environment, reports 0.4.1, lists 24 tools with schemas")
+    @Test("Starts with an empty environment, reports 0.4.2, lists 24 tools with schemas")
     func emptyEnvironmentStart() throws {
         let client = try StdioClient(env: [:])
         defer { client.close() }
         let initResponse = try client.initialize(capabilities: [:])
         let serverInfo = (initResponse["result"] as? [String: Any])?["serverInfo"] as? [String: Any]
         #expect(serverInfo?["name"] as? String == "bench")
-        #expect(serverInfo?["version"] as? String == "0.4.1")
+        #expect(serverInfo?["version"] as? String == "0.4.2")
 
         let tools = try client.listTools()
         #expect(tools.count == 24, "debug is switched off by default, so decode_crash is not listed")

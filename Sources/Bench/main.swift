@@ -226,6 +226,9 @@ func handleBenchModules(settings: BenchSettings) -> CallTool.Result {
     lines.append("")
     lines.append("Publisher: Seaynic Labs. Homepage: https://github.com/seayniclabs/bench")
     lines.append("Skills: \(ServerSkills.all.count) served as MCP prompts and resources. Start with the getting-started prompt.")
+    if !ServerSkills.all.isEmpty {
+        lines.append("       \(ServerSkills.all.map(\.name).sorted().joined(separator: ", "))")
+    }
     lines.append("Approval log: \(ApprovalLog.path(env: ProcessInfo.processInfo.environment).path)")
     lines.append(settings.approveDeviceWrites
         ? "Device writes: pre-approved by BENCH_APPROVE_DEVICE_WRITES."

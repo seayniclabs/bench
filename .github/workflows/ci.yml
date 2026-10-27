@@ -26,7 +26,7 @@ jobs:
           printf '%s\n' '{"jsonrpc":"2.0","id":7,"method":"server/discover","params":{}}' > /tmp/in.jsonl
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' >> /tmp/in.jsonl  # after server/discover, which must be answered under its own id
           (cat /tmp/in.jsonl; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 1; printf '%s\n' '{"jsonrpc":"2.0","id":3,"method":"prompts/list"}'; sleep 2) | env -i PATH=/usr/bin:/bin HOME=/tmp .build/release/Bench 2>/dev/null > /tmp/out.jsonl
-          python3 -c "import json; L=[json.loads(l) for l in open('/tmp/out.jsonl') if l.strip()]; by={x.get('id'):x for x in L}; assert by[1]['result']['serverInfo']['version']=='0.4.1'; assert len(by[2]['result']['tools'])==24; assert len(by[3]['result']['prompts'])==5; assert by[7]['error']['code']==-32601; print('ok')"
+          python3 -c "import json; L=[json.loads(l) for l in open('/tmp/out.jsonl') if l.strip()]; by={x.get('id'):x for x in L}; assert by[1]['result']['serverInfo']['version']=='0.4.2'; assert len(by[2]['result']['tools'])==24; assert len(by[3]['result']['prompts'])==5; assert by[7]['error']['code']==-32601; print('ok')"
 
       - name: Check the tool and prompt lock
         run: python3 scripts/tool_lock.py --check --binary .build/release/Bench

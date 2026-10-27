@@ -2,7 +2,7 @@ import MCP
 
 public enum Bench {
     public static let serverName = "bench"
-    public static let serverVersion = "0.4.1"
+    public static let serverVersion = "0.4.2"
 
     /// Sent to every client at startup. Plain instructions only: no links, no promotion.
     public static let instructions = "Bench finds USB maker boards (Arduino, ESP32, Raspberry Pi Pico) and their serial ports, and talks to them. Call bench_modules first: it lists the modules that are on and their tools. Skills (MCP prompts and resources) explain how to do the job well; start with the getting-started prompt. Device-changing tools ask the person for approval. Errors read 'bench.<module>.<code>: <message> Fix: <hint>'."

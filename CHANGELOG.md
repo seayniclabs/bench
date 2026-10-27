@@ -2,6 +2,14 @@
 
 All notable changes to Bench are recorded here. Versions follow semver.
 
+## 0.4.2
+
+### Changed
+- `bench_modules` now lists the names of the skills it serves, not only the count, like the other Seaynic Labs bundles.
+
+### Known limitation
+- A client that sends requests before the `initialize` reply arrives gets no answer to them (MCP Swift SDK behavior, also in 0.4.0). Every tested app waits for the reply first.
+
 ## 0.4.1
 
 ### Fixed
