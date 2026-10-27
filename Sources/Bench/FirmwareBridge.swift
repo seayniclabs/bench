@@ -1,4 +1,5 @@
 import Foundation
+import BenchCore
 
 /// Firmware flashing interface that wraps common flashing tools
 enum FirmwareBridge {
@@ -163,14 +164,15 @@ enum FirmwareBridge {
 
     // MARK: - Flash Execution
 
-    /// Build the flash command for the given tool and parameters
-    static func buildCommand(
+    /// Build the argument vector for the given tool. argv[0] is the executable.
+    /// Nothing here is joined into a shell string.
+    static func buildArgv(
         tool: FlashTool,
         toolPath: String?,
         firmwarePath: String,
         port: String?,
         baud: Int?
-    ) -> String? {
+    ) -> [String]? {
         switch tool {
         case .esptool:
             let executable = toolPath ?? "esptool.py"
@@ -182,7 +184,7 @@ enum FirmwareBridge {
                 args += ["--baud", String(baud)]
             }
             args += ["write_flash", "0x0", firmwarePath]
-            return args.joined(separator: " ")
+            return args
 
         case .dfuUtil:
             let executable = toolPath ?? "dfu-util"
@@ -191,7 +193,7 @@ enum FirmwareBridge {
                 // dfu-util uses -S for serial/path
                 args += ["-S", port]
             }
-            return args.joined(separator: " ")
+            return args
 
         case .avrdude:
             let executable = toolPath ?? "avrdude"
@@ -207,7 +209,7 @@ enum FirmwareBridge {
             // Default to Arduino (ATmega328P) — user can override via tool params
             args += ["-p", "atmega328p", "-c", "arduino"]
             args += ["-U", "flash:w:\(firmwarePath):\(format)"]
-            return args.joined(separator: " ")
+            return args
 
         case .uf2:
             // UF2 is a file copy, not a command
@@ -228,7 +230,7 @@ enum FirmwareBridge {
             return flashUF2(firmwarePath: firmwarePath)
         }
 
-        guard let command = buildCommand(
+        guard let argv = buildArgv(
             tool: tool,
             toolPath: toolPath,
             firmwarePath: firmwarePath,
@@ -242,36 +244,26 @@ enum FirmwareBridge {
                 message: "Failed to build flash command for \(tool.rawValue)"
             )
         }
+        let command = ToolRunner.display(argv)
 
-        // Execute via /bin/sh
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
+        // The port reaches an external tool, so check it again here, whatever the caller did.
+        if let port, let problem = DevicePath.problem(port) {
+            return FlashResult(success: false, command: command, output: "", message: problem)
+        }
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
+        let run: ToolRunResult
         do {
-            try process.run()
-            process.waitUntilExit()
+            run = try ToolRunner.run(name: argv[0], arguments: Array(argv.dropFirst()))
         } catch {
             return FlashResult(
                 success: false,
                 command: command,
                 output: "",
-                message: "Failed to execute: \(error.localizedDescription)"
+                message: "Failed to execute: \(error)"
             )
         }
-
-        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-        let outStr = String(data: outData, encoding: .utf8) ?? ""
-        let errStr = String(data: errData, encoding: .utf8) ?? ""
-        let combined = [outStr, errStr].filter { !$0.isEmpty }.joined(separator: "\n")
-
-        let success = process.terminationStatus == 0
+        let combined = [run.stdout, run.stderr].filter { !$0.isEmpty }.joined(separator: "\n")
+        let success = run.status == 0
 
         return FlashResult(
             success: success,
@@ -279,7 +271,7 @@ enum FirmwareBridge {
             output: combined,
             message: success
                 ? "Firmware flashed successfully via \(tool.rawValue)"
-                : "Flash failed (exit code \(process.terminationStatus))"
+                : "Flash failed (exit code \(run.status))"
         )
     }
 

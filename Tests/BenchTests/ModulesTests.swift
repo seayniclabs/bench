@@ -86,6 +86,66 @@ struct ModulesTests {
         #expect(DeviceWrites.requiresApproval(tool: "hid_send", arguments: ["action": .string("send_report")]))
     }
 
+    @Test("hid_send fails closed: only the exact read actions skip approval")
+    func hidSendFailsClosed() {
+        func needs(_ action: String?) -> Bool {
+            var args: [String: Value]? = nil
+            if let action { args = ["action": .string(action)] }
+            return DeviceWrites.requiresApproval(tool: "hid_send", arguments: args)
+        }
+        #expect(needs("send_report"))
+        #expect(needs("Send_Report"), "case variant of a write must not bypass approval")
+        #expect(needs("SEND_REPORT"))
+        #expect(needs("send_report "), "trailing space must not bypass approval")
+        #expect(needs(" get_report"), "leading space is not a read action")
+        #expect(needs("bogus"), "unknown actions need approval")
+        #expect(needs(""))
+        #expect(needs(nil), "a missing action needs approval")
+        #expect(!needs("get_report"))
+        #expect(!needs("GET_REPORT"))
+        #expect(!needs("list_reports"))
+    }
+
+    @Test("chip_detect needs approval because it resets the chip")
+    func chipDetectNeedsApproval() {
+        #expect(DeviceWrites.requiresApproval(tool: "chip_detect", arguments: ["identifier": .string("x")]))
+        let byName = Dictionary(uniqueKeysWithValues: Bench.tools.map { ($0.name, $0) })
+        #expect(byName["chip_detect"]?.annotations.readOnlyHint == false)
+        #expect(byName["chip_detect"]?.annotations.destructiveHint == true)
+    }
+
+    @Test("Serial device paths: only /dev/cu.* and /dev/tty.* with safe characters")
+    func devicePathValidation() {
+        #expect(DevicePath.isValid("/dev/cu.usbserial-2120"))
+        #expect(DevicePath.isValid("/dev/tty.usbmodem14101"))
+        #expect(DevicePath.isValid("/dev/cu.SLAB_USB.1"))
+        let rejected = [
+            "/dev/cu.x;touch /tmp/pwned",
+            "/dev/cu.x$(id)",
+            "/dev/cu.x`id`",
+            "/dev/cu.x && id",
+            "/dev/cu.x|id",
+            "/dev/cu.x'",
+            "/dev/cu.x\"",
+            "/dev/cu.x\n",
+            "/dev/cu.x\nid",
+            "/dev/cu.x/../../etc/passwd",
+            "/dev/null",
+            "/dev/disk0",
+            "/dev/ttyS0",
+            "/dev/cu.",
+            "/dev/cu.",
+            "../dev/cu.x",
+            "cu.x",
+            "",
+            "/opt/cu.x",
+        ]
+        for path in rejected {
+            #expect(!DevicePath.isValid(path), "accepted \(path)")
+            #expect(DevicePath.problem(path)?.hasPrefix("Invalid port ") == true)
+        }
+    }
+
     @Test("The approval prompt shows the full payload")
     func approvalPromptShowsPayload() {
         let prompt = DeviceWrites.approvalPrompt(

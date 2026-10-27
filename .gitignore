@@ -4,3 +4,6 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+
+# mcp-publisher writes login tokens into the working directory
+.mcpregistry_*

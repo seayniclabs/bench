@@ -172,15 +172,17 @@ public func normalizeErrorText(module: String, tool: String, text: String) -> St
 
 /// Tools that change something on real hardware or in device state.
 public enum DeviceWrites {
+    /// chip_detect is here because esptool resets the chip into its bootloader.
     public static let tools: Set<String> = [
-        "eject_device", "port_reset", "flash_firmware", "serial_write", "hid_send",
+        "eject_device", "port_reset", "flash_firmware", "serial_write", "hid_send", "chip_detect",
     ]
 
-    /// hid_send only writes for action send_report. Reads stay free.
+    /// hid_send needs approval for every action except the known read actions.
+    /// Fails closed: a missing or non-string action needs approval.
     public static func requiresApproval(tool: String, arguments: [String: Value]?) -> Bool {
         guard tools.contains(tool) else { return false }
         if tool == "hid_send" {
-            return arguments?["action"]?.stringValue == "send_report"
+            return !HIDAction.isRead(arguments?["action"]?.stringValue)
         }
         return true
     }
@@ -243,7 +245,7 @@ extension Bench {
     static let readOnlyTools: Set<String> = [
         "ping", "bench_modules", "list_usb_devices", "get_device_info", "identify_device",
         "list_serial_ports", "hub_topology", "power_info", "monitor_events", "diagnose_device",
-        "device_descriptors", "chip_detect", "serial_read", "serial_monitor",
+        "device_descriptors", "serial_read", "serial_monitor",
     ]
 
     /// Adds MCP annotations and the output schema to a tool definition.

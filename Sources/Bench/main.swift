@@ -1022,6 +1022,10 @@ func handleFlashFirmware(params: CallTool.Parameters) -> CallTool.Result {
         )
     }
 
+    if let portOverride = params.arguments?["port"]?.stringValue, let problem = DevicePath.problem(portOverride) {
+        return .init(content: [.text(problem)], isError: true)
+    }
+
     // Validate firmware file
     let validation = FirmwareBridge.validateFirmware(path: firmwarePath)
     if !validation.valid {
@@ -1095,13 +1099,13 @@ func handleFlashFirmware(params: CallTool.Parameters) -> CallTool.Result {
         let fileName = (firmwarePath as NSString).lastPathComponent
         previewCommand = "cp \(firmwarePath) \(volumePath)/\(fileName)"
     } else {
-        previewCommand = FirmwareBridge.buildCommand(
+        previewCommand = FirmwareBridge.buildArgv(
             tool: flashTool,
             toolPath: toolPath,
             firmwarePath: firmwarePath,
             port: port,
             baud: baud
-        ) ?? "(unknown)"
+        ).map { ToolRunner.display($0) } ?? "(unknown)"
     }
 
     // Execute the flash
@@ -1150,6 +1154,10 @@ func handleChipDetect(params: CallTool.Parameters) -> CallTool.Result {
         return .init(content: [.text("Missing required parameter: identifier")], isError: true)
     }
 
+    if let portOverride = params.arguments?["port"]?.stringValue, let problem = DevicePath.problem(portOverride) {
+        return .init(content: [.text(problem)], isError: true)
+    }
+
     // Check esptool is installed
     let (installed, toolPath) = FirmwareBridge.isToolInstalled(.esptool)
     if !installed {
@@ -1185,36 +1193,24 @@ func handleChipDetect(params: CallTool.Parameters) -> CallTool.Result {
     }
 
     // Prefer 'esptool' over deprecated 'esptool.py', and 'chip-id' over deprecated 'chip_id'
-    let executable = toolPath ?? "esptool"
-    let command = "\(executable) --port \(port) chip-id"
+    if let problem = DevicePath.problem(port) {
+        return .init(content: [.text(problem)], isError: true)
+    }
+    let argv = ["--port", port, "chip-id"]
+    let command = ToolRunner.display([toolPath ?? "esptool"] + argv)
 
-    // Execute
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = ["-c", command]
-
-    let stdout = Pipe()
-    let stderr = Pipe()
-    process.standardOutput = stdout
-    process.standardError = stderr
-
+    let run: ToolRunResult
     do {
-        try process.run()
-        process.waitUntilExit()
+        run = try ToolRunner.run(name: toolPath ?? "esptool", arguments: argv)
     } catch {
         return .init(
-            content: [.text("Failed to execute esptool: \(error.localizedDescription)")],
+            content: [.text("Failed to execute esptool: \(error)")],
             isError: true
         )
     }
+    let combined = [run.stdout, run.stderr].filter { !$0.isEmpty }.joined(separator: "\n")
 
-    let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-    let outStr = String(data: outData, encoding: .utf8) ?? ""
-    let errStr = String(data: errData, encoding: .utf8) ?? ""
-    let combined = [outStr, errStr].filter { !$0.isEmpty }.joined(separator: "\n")
-
-    let success = process.terminationStatus == 0
+    let success = run.status == 0
 
     let deviceName = device?.name ?? identifier
     var output = """
@@ -1283,7 +1279,7 @@ func handleHIDSend(params: CallTool.Parameters) -> CallTool.Result {
 
     let reportID = params.arguments?["report_id"]?.intValue ?? 0
 
-    switch action.lowercased() {
+    switch HIDAction.normalize(action) {
     case "send_report":
         // Require confirmation for sending
         guard let confirm = params.arguments?["confirm"]?.boolValue, confirm else {

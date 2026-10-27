@@ -57,6 +57,18 @@ struct StdioServerTests {
         }
     }
 
+    @Test("chip_detect rejects an injected port before any tool runs")
+    func chipDetectRejectsInjection() throws {
+        let client = try StdioClient(env: [:], elicitationAnswer: ["action": "accept"])
+        defer { client.close() }
+        _ = try client.initialize(capabilities: ["elicitation": [:]])
+        let injected = "/dev/cu.x;touch /tmp/bench-injection-test"
+        let response = try client.call("chip_detect", arguments: ["identifier": "x", "port": injected])
+        let text = ((response["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["text"] as? String ?? ""
+        #expect(text.hasPrefix("bench.firmware.invalid_argument: "), "got: \(text)")
+        #expect(client.elicitationMessages.count == 1, "the approval prompt is shown first")
+    }
+
     @Test("A switched-off module is hidden and its tools refuse to run")
     func disabledModule() throws {
         let client = try StdioClient(env: ["BENCH_SERIAL_ENABLED": "0"])
