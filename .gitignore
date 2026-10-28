@@ -7,3 +7,6 @@ DerivedData/
 
 # mcp-publisher writes login tokens into the working directory
 .mcpregistry_*
+
+# MCP Bundles packed by scripts/pack_mcpb.sh
+dist/

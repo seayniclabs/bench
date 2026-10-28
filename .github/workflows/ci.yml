@@ -37,6 +37,9 @@ jobs:
       - name: Check skills (license, source, credit, no site links in bodies)
         run: python3 scripts/check_skills.py
 
+      - name: Pack the MCP Bundle and validate it (mcpb validate, then the unpacked binary against the lock and manifest.json)
+        run: scripts/pack_mcpb.sh .build/release/Bench dist
+
   scan:
     runs-on: ubuntu-latest
     steps:
@@ -46,6 +49,13 @@ jobs:
       # The gitleaks CLI is free; the GitHub Action needs a license for organization repos.
       - name: gitleaks (full history)
         run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --no-banner --redact
+      - name: Validate server.json (mcp-publisher, no publish)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/mcp-publisher.tar.gz" \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.6/mcp-publisher_linux_amd64.tar.gz
+          echo "1fbe93fc0783c2394d8012c8d6e50a59e98cb2cc2d216264cc69f405d0e21340  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
+          "$RUNNER_TEMP/mcp-publisher" validate server.json
       - name: Identifier scan
         env:
           IDENTIFIER_PATTERNS: ${{ secrets.IDENTIFIER_PATTERNS }}
