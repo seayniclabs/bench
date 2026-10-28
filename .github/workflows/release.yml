@@ -48,10 +48,19 @@ jobs:
           sys.exit(1 if bad else 0)
           EOF
 
+      # One build per architecture, joined with lipo. `swift build --arch arm64 --arch x86_64`
+      # switches to the Xcode build system, which builds but exits 1 on the dependencies'
+      # Swift language version settings.
       - name: Build (release, universal)
         run: |
-          swift build -c release --arch arm64 --arch x86_64
-          echo "BENCH_BINARY=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Bench" >> "$GITHUB_ENV"
+          for arch in arm64 x86_64; do
+            swift build -c release --triple "$arch-apple-macosx14.0"
+          done
+          mkdir -p "$RUNNER_TEMP/universal"
+          lipo -create -output "$RUNNER_TEMP/universal/Bench" \
+            "$(swift build -c release --triple arm64-apple-macosx14.0 --show-bin-path)/Bench" \
+            "$(swift build -c release --triple x86_64-apple-macosx14.0 --show-bin-path)/Bench"
+          echo "BENCH_BINARY=$RUNNER_TEMP/universal/Bench" >> "$GITHUB_ENV"
 
       - name: Check the binary is universal
         run: lipo -archs "$BENCH_BINARY" && lipo "$BENCH_BINARY" -verify_arch arm64 x86_64
