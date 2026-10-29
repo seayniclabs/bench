@@ -10,3 +10,5 @@ DerivedData/
 
 # MCP Bundles packed by scripts/pack_mcpb.sh
 dist/
+__pycache__/
+*.pyc
