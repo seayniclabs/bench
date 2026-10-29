@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "bench",
   "display_name": "Bench",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "USB hardware discovery for your AI tools: find maker boards (Arduino, ESP32, Pico), their serial ports and chips, plus skills for bring-up, serial debugging, crash decoding and safe flashing.",
   "long_description": "Bench is a native macOS MCP server for developers who work with boards plugged into their Mac: Arduino, ESP32, Raspberry Pi Pico and other USB boards. It names the board, finds its serial port, reads and writes that port, detects the chip, decodes crash dumps, and flashes firmware with your approval. Device writes ask you first, every approval is logged, and Bench makes no network calls. Bench is free and open source, made by Seaynic Labs.\n\nThis bundle runs on Apple Silicon and Intel Macs with macOS 14 or later. The `debug` module (`decode_crash`) is off by default; set `BENCH_DEBUG_ENABLED=1` in the server's environment to switch it on.",
   "author": {

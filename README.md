@@ -126,10 +126,10 @@ The formula builds from source with Swift, so it needs Xcode 16.3 or later. It i
 
 ### Pinned install
 
-Use this when you want exactly the 0.4.2 source, not whatever the formula points at:
+Use this when you want exactly the 0.4.3 source, not whatever the formula points at:
 
 ```bash
-git clone --branch v0.4.2 https://github.com/seayniclabs/bench.git
+git clone --branch v0.4.3 https://github.com/seayniclabs/bench.git
 cd bench
 swift build -c release
 codesign --force --sign - --entitlements Sources/Bench/Bench.entitlements .build/release/Bench
