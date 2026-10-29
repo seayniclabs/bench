@@ -2,7 +2,7 @@
 
 All notable changes to Bench are recorded here. Versions follow semver.
 
-## Unreleased
+## 0.4.3 (2026-10-29)
 
 ### Added
 - MCP Bundle for Claude Desktop: `manifest.json` (MCPB manifest 0.3, binary server, macOS only) and `bench-<version>-darwin-universal.mcpb` on each release, with its SHA-256. Open the `.mcpb` in Claude Desktop to install Bench with its skills, no Homebrew or Xcode needed.

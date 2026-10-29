@@ -7,11 +7,11 @@
     "url": "https://github.com/seayniclabs/bench",
     "source": "github"
   },
-  "version": "0.4.2",
+  "version": "0.4.3",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/seayniclabs/bench/releases/download/v0.4.2/bench-0.4.2-darwin-universal.mcpb",
+      "identifier": "https://github.com/seayniclabs/bench/releases/download/v0.4.3/bench-0.4.3-darwin-universal.mcpb",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
