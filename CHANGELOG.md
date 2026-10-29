@@ -2,6 +2,17 @@
 
 All notable changes to Bench are recorded here. Versions follow semver.
 
+## Unreleased
+
+### Added
+- MCP Bundle for Claude Desktop: `manifest.json` (MCPB manifest 0.3, binary server, macOS only) and `bench-<version>-darwin-universal.mcpb` on each release, with its SHA-256. Open the `.mcpb` in Claude Desktop to install Bench with its skills, no Homebrew or Xcode needed.
+- Release workflow (`.github/workflows/release.yml`): on a version tag, builds a universal (arm64 and x86_64) binary, packs and checks the bundle, and attaches the bundle, its `.sha256` and a `server.json` with the hash filled in to the release.
+- `server.json` has an `mcpb` package for the official MCP registry. The repository copy holds a placeholder hash; the release asset holds the real one.
+- Scripts: `mcpb_manifest.py` (keeps the manifest's tools and prompts equal to the binary and the lock) and `pack_mcpb.sh`.
+
+### Changed
+- CI packs the bundle from the release build, validates it with `mcpb validate`, and checks the unpacked binary against the lock and the manifest. CI also validates `server.json` with `mcp-publisher validate`.
+
 ## 0.4.2
 
 ### Changed

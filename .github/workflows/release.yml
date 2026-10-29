@@ -1,0 +1,108 @@
+name: Release bundle
+
+# On a version tag (v*): build a universal release binary, pack it into an MCP Bundle,
+# fill server.json with the bundle's SHA-256, and attach the bundle, its .sha256 and that
+# server.json to the GitHub release (a draft is created if the tag has no release yet).
+# On a pull request that changes the packaging, run the same steps as a dry run: build,
+# pack, validate, no upload. Nothing here publishes to a registry.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/pack_mcpb.sh
+      - scripts/mcpb_manifest.py
+      - manifest.json
+      - server.json
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: macos-15
+    permissions:
+      contents: write  # attach assets to the release; the upload step runs on tags only
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the tag matches every version in the repository
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          python3 - "$tag" <<'EOF'
+          import json, re, sys
+          tag = sys.argv[1]
+          found = {
+              "manifest.json": json.load(open("manifest.json"))["version"],
+              "server.json": json.load(open("server.json"))["version"],
+              "tool-manifest.lock.json": json.load(open("tool-manifest.lock.json"))["version"],
+              "Sources/BenchCore/USBExplorerCore.swift": re.search(r'serverVersion = "([^"]+)"', open("Sources/BenchCore/USBExplorerCore.swift").read()).group(1),
+          }
+          bad = {k: v for k, v in found.items() if v != tag}
+          for k, v in bad.items():
+              print(f"{k} says {v}, the tag says {tag}")
+          sys.exit(1 if bad else 0)
+          EOF
+
+      # One build per architecture, joined with lipo. `swift build --arch arm64 --arch x86_64`
+      # switches to the Xcode build system, which builds but exits 1 on the dependencies'
+      # Swift language version settings.
+      - name: Build (release, universal)
+        run: |
+          for arch in arm64 x86_64; do
+            swift build -c release --triple "$arch-apple-macosx14.0"
+          done
+          mkdir -p "$RUNNER_TEMP/universal"
+          lipo -create -output "$RUNNER_TEMP/universal/Bench" \
+            "$(swift build -c release --triple arm64-apple-macosx14.0 --show-bin-path)/Bench" \
+            "$(swift build -c release --triple x86_64-apple-macosx14.0 --show-bin-path)/Bench"
+          echo "BENCH_BINARY=$RUNNER_TEMP/universal/Bench" >> "$GITHUB_ENV"
+
+      - name: Check the binary is universal
+        run: lipo -archs "$BENCH_BINARY" && lipo "$BENCH_BINARY" -verify_arch arm64 x86_64
+
+      - name: Pack and validate the bundle
+        run: |
+          bundle=$(scripts/pack_mcpb.sh "$BENCH_BINARY" dist | tail -n 1)
+          echo "BUNDLE=$bundle" >> "$GITHUB_ENV"
+
+      - name: Write server.json with the bundle's URL and SHA-256
+        run: |
+          python3 - "$BUNDLE" <<'EOF'
+          import hashlib, json, os, sys
+          bundle = sys.argv[1]
+          server = json.load(open("server.json"))
+          sha = hashlib.sha256(open(bundle, "rb").read()).hexdigest()
+          url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/v{server['version']}/{os.path.basename(bundle)}"
+          packages = [p for p in server["packages"] if p["registryType"] == "mcpb"]
+          assert len(packages) == 1, "server.json needs exactly one mcpb package"
+          if packages[0]["identifier"] != url:
+              sys.exit(f"server.json identifier {packages[0]['identifier']} != the bundle's release URL {url}")
+          packages[0]["fileSha256"] = sha
+          with open("dist/server.json", "w") as f:
+              json.dump(server, f, indent=2)
+              f.write("\n")
+          print(f"{url}\nsha256 {sha}")
+          EOF
+
+      - name: Validate server.json (mcp-publisher, no publish)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/mcp-publisher.tar.gz" \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.6/mcp-publisher_darwin_arm64.tar.gz
+          echo "49511461d9906ade963c77f6a8f147fc225d0bcad2a0d2571f75cef5db4161aa  $RUNNER_TEMP/mcp-publisher.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
+          "$RUNNER_TEMP/mcp-publisher" validate dist/server.json
+
+      - name: Attach the bundle to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --title "${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md."
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$BUNDLE" "$BUNDLE.sha256" dist/server.json --clobber
