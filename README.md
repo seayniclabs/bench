@@ -4,6 +4,8 @@
 
 <h1 align="center">Bench</h1>
 
+**Made by [Seaynic Labs](https://seayniclabs.com).** Need tools like this built around your own systems? [We do that](https://seayniclabs.com/#business).
+
 <p align="center"><strong>USB hardware discovery for your AI tools.</strong></p>
 
 Bench is a native macOS [MCP server](https://modelcontextprotocol.io) for developers who work with boards plugged into their Mac: Arduino, ESP32, Raspberry Pi Pico and other USB boards. It names the board, finds its serial port, reads and writes that port, detects the chip, decodes crash dumps, and flashes firmware with your approval. Bench is free and open source, made by [Seaynic Labs](https://seayniclabs.com).
@@ -140,7 +142,12 @@ The skills are read from `skills/` in the checkout, because the build directory 
 
 ### Claude Code plugin
 
-The repository also packages Bench as a Claude Code plugin (`.claude-plugin/plugin.json` and `.mcp.json`): the server and its skills in one install. The plugin runs the `bench` binary from your PATH, so install Bench with Homebrew first. The `seayniclabs` plugin marketplace is set up at release; until it lists Bench, use the Homebrew or pinned install.
+The repository also packages Bench as a Claude Code plugin (`.claude-plugin/plugin.json` and `.mcp.json`): the server and its skills in one install. The plugin runs the `bench` binary from your PATH, so install Bench with Homebrew first. Then add the Seaynic Labs marketplace and install the plugin:
+
+```
+/plugin marketplace add seayniclabs/plugins
+/plugin install bench@seayniclabs
+```
 
 ## Connect your AI client
 
@@ -247,11 +254,4 @@ MIT. Published by Seaynic Labs. Third-party material is listed in [CREDITS.md](C
 
 ---
 
-<table>
-  <tr>
-    <td>
-      <strong>Bench</strong> is free and open source (MIT). Made by <a href="https://seayniclabs.com">Seaynic Labs</a>.<br>
-      Source: <a href="https://github.com/seayniclabs/bench">github.com/seayniclabs/bench</a> · Security: <a href="SECURITY.md">SECURITY.md</a> · Credits: <a href="CREDITS.md">CREDITS.md</a>
-    </td>
-  </tr>
-</table>
+**Built by [Seaynic Labs](https://seayniclabs.com).** We build tools like this around a business's own systems: local-first, with a person approving every change. [See custom integrations](https://seayniclabs.com/#business).
