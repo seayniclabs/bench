@@ -113,6 +113,10 @@ Every tool result also has `structuredContent` with `ok`, `module`, `tool` and `
 
 ## Install
 
+### Claude Desktop (MCP Bundle)
+
+Download `bench-<version>-darwin-universal.mcpb` from the [latest release](https://github.com/seayniclabs/bench/releases/latest) and open it: Claude Desktop shows the install dialog. The bundle carries the binary (Apple Silicon and Intel, macOS 14 or later) and the skills, so it needs neither Homebrew nor Xcode. The binary is ad-hoc signed, not notarized. Check the download against the `.sha256` file next to it in the release.
+
 ### Homebrew
 
 ```bash
@@ -233,10 +237,12 @@ The checks that CI and release runs use:
 python3 scripts/check_skills.py           # every skill has license, source and credit; no site links in bodies
 python3 scripts/tool_lock.py --check      # tool, prompt and instruction text matches the lock
 python3 scripts/security_card.py --check  # the security card above is current
+python3 scripts/mcpb_manifest.py --check  # manifest.json lists the tools and prompts the binary serves
+scripts/pack_mcpb.sh .build/release/Bench dist  # pack the MCP Bundle and check it unpacked
 python3 scripts/scan_identifiers.py .     # no private identifiers in the tree
 ```
 
-After you change a tool, prompt or the instructions, run `python3 scripts/tool_lock.py` and add a changelog line in the same change. After you change the card's inputs, run `python3 scripts/security_card.py` and paste its output between the card markers.
+After you change a tool, prompt or the instructions, run `python3 scripts/tool_lock.py` and `python3 scripts/mcpb_manifest.py`, and add a changelog line in the same change. After you change the card's inputs, run `python3 scripts/security_card.py` and paste its output between the card markers.
 
 ## Changelog
 

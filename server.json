@@ -1,11 +1,21 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.seayniclabs/bench",
+  "title": "Bench",
   "description": "USB hardware discovery for AI tools: find maker boards, serial ports and chips.",
   "repository": {
     "url": "https://github.com/seayniclabs/bench",
     "source": "github"
   },
   "version": "0.4.2",
-  "packages": []
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/seayniclabs/bench/releases/download/v0.4.2/bench-0.4.2-darwin-universal.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
 }
